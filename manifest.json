@@ -1,0 +1,14 @@
+{
+    "version": 0,
+    "require": {
+        "cockpit": "120"
+    },
+    "menu": {
+        "samba": {
+            "label": "File sharing",
+            "order": 52,
+            "path": "index.html"
+        }
+    },
+    "content-security-policy": "default-src 'self' https: 'unsafe-inline'; connect-src wss: https: fonts.googleapis.com fonts.gstatic.com;"
+}

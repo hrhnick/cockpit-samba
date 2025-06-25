@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>File sharing</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Loading Spinner -->
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+  </div>
+
+  <!-- Action Banner -->
+  <div id="action-banner" style="display: none;"></div>
+
+  <!-- Main Page Content -->
+  <main class="pf-v6-c-page__main">
+    <!-- Page Header -->
+    <header class="pf-v6-c-page__header">
+      <h2>File sharing</h2>
+    </header>
+
+    <!-- Samba Not Installed Panel -->
+    <section id="samba-not-installed" class="samba-not-installed" style="display: none;" aria-live="polite">
+      <h3>Samba is not installed</h3>
+      <p>To use file sharing, you need to install Samba and its dependencies.</p>
+      
+      <div class="install-instructions">
+        <h4>Installation instructions:</h4>
+        
+        <div style="margin: 12px 0;">
+          <strong>Fedora/RHEL:</strong>
+          <div class="install-command">sudo dnf install samba samba-common-tools</div>
+        </div>
+        
+        <div style="margin: 12px 0;">
+          <strong>Debian/Ubuntu:</strong>
+          <div class="install-command">sudo apt install samba samba-common-bin</div>
+        </div>
+        
+        <div style="margin: 12px 0;">
+          <strong>Other distributions:</strong>
+          <a href="https://www.samba.org/" target="_blank" rel="noopener" class="install-link">Visit the Samba project homepage</a>
+        </div>
+      </div>
+      
+      <button type="button" class="pf-v6-c-button pf-v6-c-button--primary" onclick="window.location.reload()">
+        Check again
+      </button>
+    </section>
+
+    <!-- Service Status -->
+    <section id="service-status-section" class="service-status-section" style="display: none;" aria-live="polite">
+      <div class="service-status-header">
+        <h3>Service Status</h3>
+        <div class="service-status-display">
+          <span class="service-name">Samba (smbd)</span>
+          <span id="service-status-badge" class="status-badge status-unknown">Unknown</span>
+        </div>
+        <div class="service-actions">
+          <button type="button" class="pf-v6-c-button pf-v6-c-button--success" id="start-service-btn" aria-label="Start Samba service">Start</button>
+          <button type="button" class="pf-v6-c-button pf-v6-c-button--secondary" id="stop-service-btn" aria-label="Stop Samba service">Stop</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Content -->
+    <div id="main-content" style="display: none;">
+      <!-- Tab Navigation -->
+      <nav class="pf-v6-c-tabs" id="main-tabs" role="tablist">
+        <button type="button" class="pf-v6-c-tabs__tab active" data-tab="shares" role="tab" aria-selected="true" aria-controls="shares-tab">Shares</button>
+        <button type="button" class="pf-v6-c-tabs__tab" data-tab="users" role="tab" aria-selected="false" aria-controls="users-tab">Users</button>
+      </nav>
+
+      <!-- Shares Tab -->
+      <section id="shares-tab" class="tab-content active" role="tabpanel" aria-labelledby="shares-tab-button">
+        <!-- Shares Toolbar -->
+        <div class="table-toolbar">
+          <div class="search-section">
+            <label for="shares-search" class="sr-only">Filter shares</label>
+            <input type="search" id="shares-search" class="search-input" placeholder="Filter shares..." autocomplete="off">
+          </div>
+          <div class="toolbar-actions">
+            <button type="button" class="pf-v6-c-button pf-v6-c-button--primary" id="add-share-btn">
+              <span>Add share</span>
+            </button>
+          </div>
+        </div>
+        
+        <!-- Shares Table -->
+        <div class="table-container">
+          <table class="data-table" id="shares-table">
+            <thead>
+              <tr>
+                <th class="sortable" data-sort="name" scope="col">
+                  <button type="button" class="sort-button" aria-label="Sort by name">
+                    <span>Name</span>
+                    <span class="sort-indicator" aria-hidden="true"></span>
+                  </button>
+                </th>
+                <th class="sortable" data-sort="path" scope="col">
+                  <button type="button" class="sort-button" aria-label="Sort by path">
+                    <span>Path</span>
+                    <span class="sort-indicator" aria-hidden="true"></span>
+                  </button>
+                </th>
+                <th scope="col">Comment</th>
+                <th scope="col">Access</th>
+                <th class="actions-column" scope="col">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="shares-tbody">
+              <tr class="loading-row">
+                <td colspan="5" class="loading-cell">Loading shares...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Users Tab -->
+      <section id="users-tab" class="tab-content" role="tabpanel" aria-labelledby="users-tab-button">
+        <!-- Users Toolbar -->
+        <div class="table-toolbar">
+          <div class="search-section">
+            <label for="users-search" class="sr-only">Filter users</label>
+            <input type="search" id="users-search" class="search-input" placeholder="Filter users..." autocomplete="off">
+          </div>
+          <div class="toolbar-actions">
+            <button type="button" class="pf-v6-c-button pf-v6-c-button--primary" id="manage-users-btn">
+              <span>Manage users</span>
+            </button>
+          </div>
+        </div>
+        
+        <!-- Users Table -->
+        <div class="table-container">
+          <table class="data-table" id="users-table">
+            <thead>
+              <tr>
+                <th class="sortable" data-sort="username" scope="col">
+                  <button type="button" class="sort-button" aria-label="Sort by username">
+                    <span>Username</span>
+                    <span class="sort-indicator" aria-hidden="true"></span>
+                  </button>
+                </th>
+                <th scope="col">Full Name</th>
+                <th scope="col">Samba Status</th>
+                <th class="actions-column" scope="col">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="users-tbody">
+              <tr class="loading-row">
+                <td colspan="4" class="loading-cell">Loading system users...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Add/Edit Share Modal -->
+  <div id="add-share-modal" class="pf-v6-c-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
+    <div class="pf-v6-c-modal__box">
+      <header class="pf-v6-c-modal__header">
+        <h3 id="share-modal-title">Add new share</h3>
+        <button type="button" class="pf-v6-c-modal__close" id="close-share-modal" aria-label="Close dialog">&times;</button>
+      </header>
+      <div class="pf-v6-c-modal__body">
+        <form id="add-share-form" novalidate>
+          <div class="pf-v6-c-form__group">
+            <label class="pf-v6-c-form__label" for="share-name">
+              Share name <span aria-hidden="true">*</span>
+            </label>
+            <input class="pf-v6-c-form__input" type="text" id="share-name" name="share-name" required autocomplete="off">
+            <div class="pf-v6-c-form__helper-text">Name for the share (e.g., "documents", "media")</div>
+          </div>
+
+          <div class="pf-v6-c-form__group">
+            <label class="pf-v6-c-form__label" for="share-path">
+              Directory path <span aria-hidden="true">*</span>
+            </label>
+            <input class="pf-v6-c-form__input" type="text" id="share-path" name="share-path" required autocomplete="off">
+            <div class="pf-v6-c-form__helper-text">Full path to the directory to share (e.g., /home/shared/documents)</div>
+          </div>
+
+          <div class="pf-v6-c-form__group">
+            <label class="pf-v6-c-form__label" for="share-comment">Comment</label>
+            <input class="pf-v6-c-form__input" type="text" id="share-comment" name="share-comment" autocomplete="off">
+            <div class="pf-v6-c-form__helper-text">Optional description for the share</div>
+          </div>
+
+          <fieldset class="pf-v6-c-form__group">
+            <legend class="pf-v6-c-form__group-label">Permissions</legend>
+            <div class="pf-v6-c-form__group-control">
+              <label class="pf-v6-c-check">
+                <input class="pf-v6-c-check__input" type="checkbox" id="share-readonly" name="share-readonly">
+                <span class="pf-v6-c-check__label">Read only</span>
+              </label>
+              <label class="pf-v6-c-check">
+                <input class="pf-v6-c-check__input" type="checkbox" id="share-guest" name="share-guest">
+                <span class="pf-v6-c-check__label">Allow guest access</span>
+              </label>
+              <label class="pf-v6-c-check">
+                <input class="pf-v6-c-check__input" type="checkbox" id="share-browseable" name="share-browseable" checked>
+                <span class="pf-v6-c-check__label">Browseable</span>
+              </label>
+            </div>
+          </fieldset>
+
+          <div class="pf-v6-c-form__group">
+            <label class="pf-v6-c-form__label" for="share-users">Valid users and groups</label>
+            <input class="pf-v6-c-form__input" type="text" id="share-users" name="share-users" placeholder="e.g. john,mary,@sales,@admin" autocomplete="off">
+            <div class="pf-v6-c-form__helper-text">
+              Enter users and groups separated by commas. Use @groupname for groups.<br>
+              <strong>Examples:</strong> <code>john,mary</code> or <code>@sales,@admin</code> or <code>john,@developers,mary</code><br>
+              <em>Leave empty to allow all users</em>
+            </div>
+          </div>
+        </form>
+      </div>
+      <footer class="pf-v6-c-modal__footer">
+        <button type="submit" class="pf-v6-c-button pf-v6-c-button--primary" id="submit-share-btn" form="add-share-form">Create share</button>
+        <button type="button" class="pf-v6-c-button pf-v6-c-button--secondary" id="cancel-share-btn">Cancel</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Set Samba Password Modal -->
+  <div id="samba-password-modal" class="pf-v6-c-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="password-modal-title">
+    <div class="pf-v6-c-modal__box">
+      <header class="pf-v6-c-modal__header">
+        <h3 id="password-modal-title">Set Samba password</h3>
+        <button type="button" class="pf-v6-c-modal__close" id="close-password-modal" aria-label="Close dialog">&times;</button>
+      </header>
+      <div class="pf-v6-c-modal__body">
+        <p>Set a Samba password for user <strong id="password-username"></strong>:</p>
+        <form id="samba-password-form" novalidate>
+          <div class="pf-v6-c-form__group">
+            <label class="pf-v6-c-form__label" for="samba-password">
+              Password <span aria-hidden="true">*</span>
+            </label>
+            <input class="pf-v6-c-form__input" type="password" id="samba-password" name="samba-password" required autocomplete="new-password">
+          </div>
+          <div class="pf-v6-c-form__group">
+            <label class="pf-v6-c-form__label" for="samba-password-confirm">
+              Confirm password <span aria-hidden="true">*</span>
+            </label>
+            <input class="pf-v6-c-form__input" type="password" id="samba-password-confirm" name="samba-password-confirm" required autocomplete="new-password">
+          </div>
+        </form>
+      </div>
+      <footer class="pf-v6-c-modal__footer">
+        <button type="submit" class="pf-v6-c-button pf-v6-c-button--primary" id="set-password-btn" form="samba-password-form">Set password</button>
+        <button type="button" class="pf-v6-c-button pf-v6-c-button--secondary" id="cancel-password-btn">Cancel</button>
+      </footer>
+    </div>
+  </div>
+
+  <script src="../base1/cockpit.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
