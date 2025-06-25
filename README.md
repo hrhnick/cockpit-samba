@@ -1,8 +1,12 @@
 # Cockpit Samba Plugin
 
-A modern, user-friendly Cockpit plugin for managing Samba file shares and users on Linux systems.
+A lightweight Cockpit plugin for configuring Samba shares.
 
-![Cockpit Samba Plugin Screenshot](https://via.placeholder.com/800x400/0066cc/ffffff?text=Cockpit+Samba+Plugin)
+![Screenshot_Users](https://github.com/user-attachments/assets/2a6de3dc-ccfc-4c18-a690-ca07b0530197)
+![Screenshot_AddShare](https://github.com/user-attachments/assets/694d7fb6-4cef-44a1-a694-07d13ffb6981)
+![Screenshot_Shares](https://github.com/user-attachments/assets/ede27bc7-5d9a-4c74-81b2-4bdd8217cdb7)
+
+
 
 ## Features
 
