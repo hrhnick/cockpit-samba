@@ -58,8 +58,8 @@ A modern, user-friendly Cockpit plugin for managing Samba file shares and users 
 1. **Download the plugin:**
    ```bash
    sudo mkdir -p /usr/share/cockpit/samba
-   sudo wget -O /tmp/cockpit-samba.tar.gz [DOWNLOAD_URL]
-   sudo tar -xzf /tmp/cockpit-samba.tar.gz -C /usr/share/cockpit/samba --strip-components=1
+   sudo wget -O /tmp/cockpit-samba.zip https://github.com/hrhnick/cockpit-samba/archive/refs/heads/main.zip
+   sudo unzip /tmp/cockpit-samba.zip -d /usr/share/cockpit/samba
    ```
 
 2. **Install Samba if not already installed:**
@@ -283,7 +283,7 @@ make install-local
 ## Support
 
 ### Getting Help
-- **Issues**: Report bugs via [GitHub Issues](https://github.com/your-repo/cockpit-samba/issues)
+- **Issues**: Report bugs via [GitHub Issues](https://github.com/hrhnick/cockpit-samba/issues)
 - **Discussions**: Join community discussions
 - **Documentation**: Check the [Cockpit documentation](https://cockpit-project.org/documentation.html)
 - **Samba Help**: Refer to [Samba documentation](https://www.samba.org/samba/docs/)
