@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
-// Cockpit's PatternFly entry sheet. It pulls in PatternFly's base, the
-// Red Hat fonts and the overrides that give PatternFly components the
-// Cockpit look, so that this page matches the built-in ones. It is the
-// same sheet the shipped pages (Accounts, Services, Storage) build on.
-@use "patternfly/patternfly-6-cockpit.scss";
+// This sheet has to be imported *last*, after every PatternFly component,
+// because page.scss brings in Cockpit's PatternFly overrides and those only
+// take effect if they come after the component CSS they are correcting.
+// PatternFly's components import their own stylesheets, so their CSS lands
+// wherever the component is first imported. Cockpit's own pages do the same
+// thing: users.js imports users.scss as its final import.
+//
+// patternfly-6-cockpit.scss is the exception and is imported first, from
+// index.tsx, because it defines the variables and fonts everything else
+// builds on.
 
-// Page-level layout and Cockpit's card styling.
+// Page-level layout, Cockpit's card styling, and the overrides.
 @use "page.scss";
 @use "ct-card.scss";
 
