@@ -43,7 +43,7 @@ import { SortByDirection } from "@patternfly/react-table";
 import { ShareLabels } from "../components/labels";
 import * as client from "../samba/client";
 import type { SambaUser } from "../samba/client";
-import type { Share } from "../samba/conf";
+import { groupEntryName, isGroupEntry, type Share } from "../samba/conf";
 
 const _ = cockpit.gettext;
 
@@ -62,7 +62,7 @@ function reachableShares(user: SambaUser, shares: Share[]): string[] {
                 share.validUsers.length === 0 ||
                 share.validUsers.includes(user.name) ||
                 share.validUsers.some(entry =>
-                    entry.startsWith("@") && user.groups.includes(entry.slice(1))))
+                    isGroupEntry(entry) && user.groups.includes(groupEntryName(entry))))
             .map(share => share.name);
 }
 

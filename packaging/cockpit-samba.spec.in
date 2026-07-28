@@ -45,6 +45,9 @@ Recommends: acl
 # answers the WS-Discovery queries that make the server visible in
 # Windows' Network view
 Recommends: wsdd
+# advertises the server over mDNS, which is how macOS machines find it
+# by name on the network
+Suggests: avahi
 
 %{NPM_PROVIDES}
 

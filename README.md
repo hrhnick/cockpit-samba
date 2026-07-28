@@ -24,7 +24,8 @@ page](https://github.com/hrhnick/cockpit-samba/releases).
 The deb and rpm depend on Samba itself and recommend `acl` (folders shared
 with several users) and [wsdd](https://github.com/christgau/wsdd) (which makes
 the server appear in Windows' Network view), so a package install brings
-everything the page manages.
+everything the page manages. `avahi` is suggested as well: it advertises the
+server over mDNS, which is how macOS machines find it by name.
 
 The packages are named without a version, so the newest one always has the same
 address and can be fetched by a script:

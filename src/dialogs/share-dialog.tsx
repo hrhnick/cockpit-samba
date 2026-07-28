@@ -25,7 +25,8 @@ import { grantAccess, SystemFolderAlert } from "./share-actions";
 import * as client from "../samba/client";
 import { isProtectedPath } from "../samba/paths";
 import {
-    emptyShare, guestsShutOut, sharePrincipals, writeShare, type SambaConf, type Share,
+    emptyShare, guestsShutOut, isGroupEntry, sharePrincipals, writeShare,
+    type SambaConf, type Share,
 } from "../samba/conf";
 
 const _ = cockpit.gettext;
@@ -190,7 +191,7 @@ export const ShareDialog = ({
             value,
             content: value,
             /* Groups yellow and users blue, as on the Accounts page. */
-            color: value.startsWith("@") ? "yellow" as const : "blue" as const,
+            color: isGroupEntry(value) ? "yellow" as const : "blue" as const,
         }));
     };
 

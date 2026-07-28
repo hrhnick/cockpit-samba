@@ -494,11 +494,58 @@ function resolveReadOnly(conf: SambaConf, section: ConfSection | undefined): boo
     return true;
 }
 
+/* Split a Samba name list ("valid users", "write list"). Entries are
+   separated by whitespace or commas; a name containing either is written
+   in double quotes. Samba's tokenizer toggles quoting wherever a quote
+   appears and strips the quotes themselves, so `"domain users"`,
+   `@"domain admins"` and `"@domain admins"` all parse the way Samba
+   reads them. Splitting on whitespace would cut such a name in two — and
+   then write the two halves back. */
 export function parseValidUsers(raw: string | undefined): string[] {
     if (!raw)
         return [];
-    return raw.split(/[,\s]+/).map(s => s.trim())
-            .filter(Boolean);
+
+    const names: string[] = [];
+    let current = "";
+    let quoted = false;
+    for (const ch of raw) {
+        if (ch === '"') {
+            quoted = !quoted;
+        } else if (!quoted && (ch === "," || /\s/.test(ch))) {
+            if (current)
+                names.push(current);
+            current = "";
+        } else {
+            current += ch;
+        }
+    }
+    if (current)
+        names.push(current);
+    return names;
+}
+
+/* The inverse: one string Samba reads back as the same list. A name
+   containing a separator has to be quoted or it comes back as two names;
+   one containing a quote cannot be written at all, because Samba strips
+   quotes wherever they appear, so there is no way to spell it. */
+export function joinNameList(names: string[]): string {
+    return names.map(name => {
+        if (name.includes('"'))
+            throw new Error("names in a user list must not contain '\"'");
+        return /[\s,]/.test(name) ? `"${name}"` : name;
+    }).join(", ");
+}
+
+/* smb.conf marks a group in a user list with a leading @ (UNIX group or
+   NIS netgroup), + (UNIX group only) or & (netgroup only), and the
+   markers combine, as in "+&staff". Everything else is a user name. */
+export function isGroupEntry(name: string): boolean {
+    return /^[@+&]/.test(name);
+}
+
+/* The group's own name, without the markers. */
+export function groupEntryName(name: string): string {
+    return name.replace(/^[@+&]+/, "");
 }
 
 export function readShare(conf: SambaConf, section: ConfSection): Share {
@@ -610,8 +657,8 @@ export function writeShare(conf: SambaConf, share: Share, previousName?: string)
        parameter at all; only turning one off has to be recorded. */
     writeOptional(AVAILABLE_KEYS, share.available ? "" : "no");
 
-    setOrDeleteParam(section, "valid users", share.validUsers.join(", "));
-    writeOptional(WRITE_LIST_KEYS, share.writeList.join(", "));
+    setOrDeleteParam(section, "valid users", joinNameList(share.validUsers));
+    writeOptional(WRITE_LIST_KEYS, joinNameList(share.writeList));
     writeOptional(HOSTS_ALLOW_KEYS, share.hostsAllow.trim());
     writeOptional(HOSTS_DENY_KEYS, share.hostsDeny.trim());
     writeOptional(FORCE_GROUP_KEYS, share.forceGroup.trim());
@@ -680,12 +727,18 @@ export function globalText(conf: SambaConf): string {
 
 /* Replace the whole [global] body with the given text. */
 export function setGlobalText(conf: SambaConf, text: string): void {
-    const section = getSection(conf, GLOBAL) ?? addSection(conf, GLOBAL);
     const parsed = parseConf(text);
-    section.entries = parsed.sections.flatMap(s => [
-        ...s.headerLines.map(line => ({ kind: "other" as const, lines: [line] })),
-        ...s.entries,
-    ]);
+
+    /* A [section] header in this text would end [global] early on disk
+       and turn the rest into that other section — creating or taking
+       over a share from a dialog that claims to edit only [global]. The
+       dialog refuses this with an explanation before it gets here; the
+       model refuses it regardless of who calls. */
+    if (parsed.sections.some(s => s.headerLines.length > 0))
+        throw new Error("global settings must not contain section headers");
+
+    const section = getSection(conf, GLOBAL) ?? addSection(conf, GLOBAL);
+    section.entries = parsed.sections[0].entries;
 }
 
 /* --- Advanced logging (the full_audit VFS module) --------------------- */

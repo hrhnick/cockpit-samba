@@ -38,11 +38,13 @@ updates:
       - dependency-name: "@patternfly/*"
         update-types: ["version-update:semver-major"]
 
-      # PF5 requires React 18
+      # React majors have to move together with the vendored pkg/lib,
+      # which is built against the React that Cockpit uses
       - dependency-name: "*react*"
         update-types: ["version-update:semver-major"]
 
-      # The plugins we use didn't work with anything after 8 at some point
+      # eslint 9 requires flat config, which pkg/lib's shared
+      # configuration has not moved to
       - dependency-name: "eslint"
         update-types: ["version-update:semver-major"]
 

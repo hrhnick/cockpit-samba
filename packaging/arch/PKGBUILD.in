@@ -2,14 +2,22 @@ pkgname=cockpit-samba
 pkgver=VERSION
 pkgrel=1
 pkgdesc='Cockpit module for managing Samba file shares'
-arch=('x86_64')
+arch=('any')
 url='https://github.com/hrhnick/cockpit-samba'
-license=(LGPL)
+# The project's own code is MIT; the built page bundles pkg/lib from the
+# Cockpit repository, which is LGPL.
+license=('MIT AND LGPL-2.1-or-later')
+# samba is a hard dependency: every part of the page manages it, and it
+# carries the tools the page runs (testparm, smbpasswd, pdbedit,
+# smbstatus, smbcontrol).
+depends=('cockpit' 'samba')
+optdepends=('acl: give several users access to one share folder'
+            'wsdd: make the server visible in the Windows Network view'
+            'avahi: advertise the server over mDNS, which is how macOS finds it by name')
 source=("SOURCE")
 sha256sums=('SKIP')
 
 package() {
-  depends=(cockpit)
   cd $pkgname
   make DESTDIR="$pkgdir" install PREFIX=/usr
 }

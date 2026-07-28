@@ -14,16 +14,18 @@ import React from "react";
 import { Label } from "@patternfly/react-core/dist/esm/components/Label/index.js";
 import { Flex } from "@patternfly/react-core/dist/esm/layouts/Flex/index.js";
 
+import { isGroupEntry } from "../samba/conf";
+
 const Row = ({ children }: { children: React.ReactNode }) => (
     <Flex spaceItems={{ default: "spaceItemsSm" }}>{children}</Flex>
 );
 
 /* Users and groups, coloured as the Accounts page colours them: groups
-   yellow, accounts blue. smb.conf marks a group with a leading @. */
+   yellow, accounts blue. smb.conf marks a group with a leading @, + or &. */
 export const PrincipalLabels = ({ principals }: { principals: string[] }) => (
     <Row>
         {principals.map(name => (
-            <Label key={name} color={name.startsWith("@") ? "yellow" : "blue"} isCompact>
+            <Label key={name} color={isGroupEntry(name) ? "yellow" : "blue"} isCompact>
                 {name}
             </Label>
         ))}

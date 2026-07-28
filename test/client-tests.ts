@@ -4,9 +4,10 @@
  */
 
 /* Unit tests for the pure parts of samba/client.ts: the permission plan
- * whose answer becomes root-run chown/chmod, and the smbstatus parsers
- * that fill the connections table — including the address the Disconnect
- * button targets. All of them turn text or arrays into data and can be
+ * whose answer becomes root-run chown/chmod, the smbstatus parsers that
+ * fill the connections table — including the address the Disconnect
+ * button targets — and the filter that decides which testparm lines are
+ * worth an alert. All of them turn text or arrays into data and can be
  * wrong without being loud, which is what earns them tests.
  *
  * cockpit itself is stubbed at bundle time (test/stubs); nothing here
@@ -17,7 +18,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-    parseConnectionsJson, parseConnectionsText, permissionPlan,
+    filterWarnings, parseConnectionsJson, parseConnectionsText, permissionPlan,
 } from "../src/samba/client";
 
 /* --- permissionPlan ---------------------------------------------------- */
@@ -49,6 +50,15 @@ test("more than one of either kind needs ACLs", () => {
 test("the @ marker is stripped from group names", () => {
     const plan = permissionPlan(["@staff", "@editors", "@"]);
     assert.deepEqual(plan, { kind: "acl", users: [], groups: ["staff", "editors"] });
+});
+
+/* smb.conf also marks groups with + and &; classifying "+staff" as a
+   user would put that string on a chown command line. */
+test("the + and & group markers are groups too", () => {
+    assert.deepEqual(permissionPlan(["+staff"]),
+                     { kind: "ownership", owner: "", group: "staff" });
+    assert.deepEqual(permissionPlan(["alice", "&editors", "+&admins"]),
+                     { kind: "acl", users: ["alice"], groups: ["editors", "admins"] });
 });
 
 /* --- The fixed-width smbstatus reports --------------------------------- */
@@ -154,4 +164,40 @@ test("something that is not the JSON report is rejected as null", () => {
     assert.equal(parseConnectionsJson("{}"), null);
     assert.equal(parseConnectionsJson("[]"), null);
     assert.equal(parseConnectionsJson('{"version": "4.17"}'), null);
+});
+
+/* --- The testparm warning filter --------------------------------------- */
+
+/* The shape of testparm's merged stderr: banner lines, real warnings
+   (one of them twice — testparm repeats itself), and lines that carry no
+   warning at all. */
+const TESTPARM = `Load smb config files from /etc/samba/smb.conf
+Loaded services file OK.
+WARNING: The "syslog" option is deprecated
+Unknown parameter encountered: "typo here"
+Ignoring unknown parameter "typo here"
+WARNING: The "syslog" option is deprecated
+Weighted crypto is in use
+Server role: ROLE_STANDALONE
+`;
+
+test("testparm noise is filtered down to real warnings, once each", () => {
+    assert.deepEqual(filterWarnings(TESTPARM), [
+        'WARNING: The "syslog" option is deprecated',
+        'Unknown parameter encountered: "typo here"',
+        'Ignoring unknown parameter "typo here"',
+    ]);
+});
+
+/* The page turns vfs_fruit on itself for Time Machine shares, so
+   testparm's warning about it would nag about the page's own choice. */
+test("the vfs_fruit mixing warning is hidden", () => {
+    const out = "WARNING: some services use vfs_fruit, others don't. " +
+        "Mounting them in conjunction on OS X clients results in undefined behaviour.\n";
+    assert.deepEqual(filterWarnings(out), []);
+});
+
+test("clean output produces no warnings", () => {
+    assert.deepEqual(filterWarnings(""), []);
+    assert.deepEqual(filterWarnings("Load smb config files from /etc/samba/smb.conf\n"), []);
 });
