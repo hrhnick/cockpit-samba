@@ -526,11 +526,19 @@ export async function applyPermissions(path: string, validUsers: string[]): Prom
         return false;
     }
 
-    if (users.length === 0 && groups.length === 1) {
-        /* A single group needs no ACLs: setgid keeps new files in the
-           group so members keep seeing each other's files. */
-        await run(["chgrp", groups[0], path]);
-        await run(["chmod", "2770", path]);
+    /* Ordinary ownership covers up to one user and one group, which is what
+     * most shares are. Only beyond that are ACLs needed, and setfacl is not
+     * installed by default on Debian and its derivatives — it comes from the
+     * acl package — so it is worth avoiding when it buys nothing.
+     *
+     * setgid on the group cases keeps files created inside the share in the
+     * share's group, so members keep seeing each other's files.
+     */
+    if (users.length <= 1 && groups.length <= 1) {
+        const owner = users.length === 1 ? users[0] : "";
+        const group = groups.length === 1 ? groups[0] : "";
+        await run(["chown", `${owner}:${group}`, path]);
+        await run(["chmod", group ? "2770" : "0700", path]);
         return false;
     }
 

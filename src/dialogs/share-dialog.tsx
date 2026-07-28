@@ -163,8 +163,8 @@ export const ShareDialog = ({ share, shares, applyConf, onPathsChanged }: ShareD
                 if (aclUnavailable)
                     alert({
                         variant: "warning",
-                        title: _("The folder was created, but per-user permissions could not be set."),
-                        detail: _("setfacl is not available, so access is limited to the folder's owner and group."),
+                        title: _("The folder was created, but permissions for every user could not be set."),
+                        detail: _("Sharing with more than one user or group needs ACLs, and setfacl is not installed. Install the acl package, then use Edit share to apply the permissions."),
                     });
             }
 
