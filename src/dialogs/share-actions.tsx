@@ -52,7 +52,7 @@ function aclUnavailableAlert(created: boolean): AlertRequest {
         title: created
             ? _("The folder was created, but not everyone could be given access.")
             : _("Not everyone could be given access to the folder."),
-        detail: _("Granting access to more than one user or group needs ACLs, and setfacl is not installed. Install the acl package, then use \"Fix folder permissions\" in the share's menu."),
+        detail: _("Granting access to more than one user or group needs ACLs, and setfacl is not installed. Install the acl package, then edit the share and tick \"Set the folder's permissions to match\"."),
     };
 }
 
@@ -143,78 +143,6 @@ export const CreateDirectoryDialog = ({ share, onDone }: {
                                                       principals.join(", "))}
                           isChecked={applyAcls}
                           onChange={(_event, checked) => setApplyAcls(checked)} />
-            )}
-        </DialogFrame>
-    );
-};
-
-/* What plain ownership will be set to. A share named one user, one group,
-   or one of each, and each reads differently. */
-function ownershipSummary(owner: string, group: string): React.ReactNode {
-    if (owner && group)
-        return fmt_to_fragments(
-            _("The folder will be owned by $0 and the group $1, and closed to everyone else."),
-            <strong>{owner}</strong>, <strong>{group}</strong>);
-    if (group)
-        return fmt_to_fragments(
-            _("The folder will be given to the group $0, and closed to everyone else."),
-            <strong>{group}</strong>);
-    return fmt_to_fragments(
-        _("The folder will be owned by $0, and closed to everyone else."),
-        <strong>{owner}</strong>);
-}
-
-/* Samba checks `valid users` on top of the ordinary Unix permissions, so
- * a share whose folder does not let those accounts in refuses them however
- * the share itself is configured. That is what this repairs — most often
- * after the user list changed, since the folder does not follow it by
- * itself.
- */
-export const FixPermissionsDialog = ({ share, onDone }: {
-    share: Share;
-    onDone: () => void;
-}) => {
-    const alert = useAlerts();
-    const principals = sharePrincipals(share);
-    const plan = client.permissionPlan(principals);
-    const isSystemFolder = isProtectedPath(share.path);
-
-    async function onApply() {
-        await grantAccess(share, false, alert);
-        onDone();
-    }
-
-    return (
-        <DialogFrame id="fix-permissions-dialog"
-                     variant="small"
-                     title={_("Fix folder permissions")}
-                     actionLabel={_("Apply permissions")}
-                     isActionDisabled={plan.kind === "none" || isSystemFolder}
-                     onApply={onApply}>
-            <p>
-                {fmt_to_fragments(
-                    _("Samba only lets an account into a share if the folder $0 lets it in too. Changing who may use a share does not change the folder, so the two can drift apart."),
-                    <code>{share.path}</code>)}
-            </p>
-
-            {isSystemFolder && <SystemFolderAlert path={share.path} />}
-
-            {!isSystemFolder && plan.kind === "none" && (
-                <p className="pf-v6-u-mt-sm">
-                    {_("This share names no users, so there is nothing to grant. Every account with a Samba password may connect, and the folder's own permissions decide what they can do.")}
-                </p>
-            )}
-
-            {!isSystemFolder && plan.kind === "ownership" && (
-                <p className="pf-v6-u-mt-sm">{ownershipSummary(plan.owner, plan.group)}</p>
-            )}
-
-            {!isSystemFolder && plan.kind === "acl" && (
-                <p className="pf-v6-u-mt-sm">
-                    {cockpit.format(
-                        _("$0 will each be given access through a filesystem ACL, which new files inside the folder inherit."),
-                        principals.join(", "))}
-                </p>
             )}
         </DialogFrame>
     );

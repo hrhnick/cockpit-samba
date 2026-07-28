@@ -208,6 +208,11 @@ export async function configWarnings(): Promise<string[]> {
         const text = line.trim();
         if (!text || /^Load(ed| smb config)/.test(text) || /^Server role/.test(text))
             continue;
+        /* This page turns on vfs_fruit itself for Time Machine shares, so
+           testparm's warning about mixing fruit and non-fruit shares would
+           nag every user about the page's own, deliberate choice. */
+        if (/vfs_fruit/i.test(text))
+            continue;
         if (/warning|error|deprecated|unknown parameter|ignoring|invalid/i.test(text))
             seen.add(text);
     }
