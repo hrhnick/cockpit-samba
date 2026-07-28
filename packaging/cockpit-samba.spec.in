@@ -33,6 +33,10 @@ BuildRequires: nodejs-esbuild
 %endif
 
 Requires: cockpit-bridge
+# The page offers to install Samba itself when it is missing, so this is a
+# weak dependency: the module is useful on a machine that does not have a
+# file server yet, and pointless on one that never will.
+Recommends: samba
 
 %{NPM_PROVIDES}
 

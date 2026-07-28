@@ -1,12 +1,18 @@
 {
     "requires": {
-        "cockpit": "137"
+        "cockpit": "266"
     },
 
     "menu": {
         "index": {
             "label": "Samba shares",
-            "order": 100
+            "order": 100,
+            "keywords": [
+                {
+                    "matches": ["samba", "smb", "cifs", "share", "shares", "file sharing",
+                                "network drive", "windows", "smbd", "workgroup", "guest"]
+                }
+            ]
         }
     }
 }

@@ -1,51 +1,86 @@
-# Cockpit Samba Manager
+# Cockpit Samba
 
-A hacked, probably broken, file sharing management plugin for [Cockpit](https://cockpit-project.org/) that provides a web interface for managing Samba shares and users.
+A [Cockpit](https://cockpit-project.org/) page for managing Samba file shares:
+create and edit shares, give local accounts access to them, watch who is
+connected, and keep the server configuration in order — without leaving the web
+console.
 
-<img width="1731" height="748" alt="Screenshot 2026-07-08 at 1 52 43 PM" src="https://github.com/user-attachments/assets/38a35565-a132-4190-b91c-66120f9ae022" />
-
-
-
-## Installation
-
-
-
-Access through Cockpit at `https://your-server:9090`
+<img width="1731" height="748" alt="Screenshot" src="https://github.com/user-attachments/assets/38a35565-a132-4190-b91c-66120f9ae022" />
 
 ## Requirements
 
-- Cockpit web console
-- Samba server (smbd)
-- Samba common tools (smbpasswd, testparm, pdbedit)
+- Cockpit
+- Samba (`smbd`), plus `smbpasswd`, `pdbedit`, `testparm` and `smbstatus`, which
+  ship with it
 
-## Core Features
+If Samba is not installed, the page offers to install it through PackageKit.
 
-**Share Management**
-- Create and configure Samba shares
-- Set access permissions (read-only/read-write)
-- Configure guest access and browseable options
-- Manage valid users and groups per share
-- Edit and delete existing shares
-- Fix SELinux
-- Fix missing folders
+## Features
 
-**User Management**
-- Enable/disable Samba access for system users
-- Set and change Samba passwords
-- View user status at a glance
-- Only shows regular users (UID >= 1000)
-- Quick link to the Cockpit Users/Accounts plugin for advanced user management/creation
+**Shares**
 
-**Service Control**
-- Monitor Samba service status
-- Start, stop, and restart Samba
-- Automatic service detection (smb/smbd)
-- Enable advanced logging
-- View logs
+- Create, edit, rename and delete shares
+- Read-only or read-write, guest access, and whether the share is visible when
+  browsing the server
+- Restrict a share to particular users and groups, with completion from the
+  accounts and groups on the machine
+- Expand a share to see who may connect, how many clients are connected, and the
+  network address to use from a client
+- Detects a share whose folder is missing or which SELinux is blocking, and
+  offers to fix either
 
-## Configuration
+**Access**
 
-Default paths:
-- Configuration: `/etc/samba/smb.conf`
-- Automatic backups created before changes
+- Give a local account a Samba password, change it, or take its access away
+- See at a glance which accounts can connect
+- Links to Cockpit's Accounts page for creating the accounts themselves
 
+**Server**
+
+- Status, version and uptime; start, stop and restart; start on boot
+- Who is connected, which shares they have open, and whether the connection is
+  encrypted and signed
+- Edit the `[global]` section, with `testparm` validating every change
+- Download the configuration, or restore one from a file
+- Follow the Samba journal, and optionally log file activity through the
+  `full_audit` VFS module
+
+## How it treats your configuration
+
+`/etc/samba/smb.conf` is parsed into sections that remember their original text,
+and a change rewrites only the lines it touches. Comments, `include` directives
+and parameters this page does not manage are left exactly as they were.
+
+Every write is checked with `testparm` first, the previous file is copied to
+`/etc/samba/smb.conf.bak`, and the running server is asked to reload. The page
+follows the file, so a change made in a text editor, or by another Cockpit
+session, shows up here without a refresh.
+
+## Development
+
+```sh
+make                  # fetch Cockpit's shared components and build into dist/
+npm run watch         # rebuild on change
+make devel-install    # symlink dist/ into ~/.local/share/cockpit
+```
+
+Then open Cockpit at `https://localhost:9090` and go to *Samba shares*.
+
+Checks:
+
+```sh
+npm test              # unit tests for the smb.conf model
+npm run typecheck     # tsc
+npm run eslint
+npm run stylelint
+make check            # browser integration tests, needs a test VM
+```
+
+`pkg/lib` is checked out from the [Cockpit
+repository](https://github.com/cockpit-project/cockpit) by the Makefile at the
+commit pinned in `COCKPIT_REPO_COMMIT`; the PatternFly versions in
+`package.json` are kept in step with the ones that checkout is built against.
+
+## License
+
+LGPL-2.1-or-later

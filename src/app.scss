@@ -1,381 +1,47 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
-// Cockpit's own PF6 override sheet + card styles, the same ones native plugins
-// (Accounts, Podman, ...) build against. These restyle PF components to the
-// Cockpit look: page layout for the no-masthead-sidebar case, form controls,
-// menus, cards with normal-weight 2xl titles, etc.
-@use "patternfly/patternfly-6-overrides.scss";
+// Cockpit's PatternFly entry sheet. It pulls in PatternFly's base, the
+// Red Hat fonts and the overrides that give PatternFly components the
+// Cockpit look, so that this page matches the built-in ones. It is the
+// same sheet the shipped pages (Accounts, Services, Storage) build on.
+@use "patternfly/patternfly-6-cockpit.scss";
+
+// Page-level layout and Cockpit's card styling.
+@use "page.scss";
 @use "ct-card.scss";
 
-// Workaround: @patternfly/react-styles is ahead of @patternfly/patternfly in
-// this project (6.6.0 vs 6.1.0), so the two-level custom property chain that
-// text-input-group (used by SearchInput) relies on for its border fails to
-// resolve, leaving the search box borderless. Pin the border explicitly
-// until the patternfly packages are realigned to the same version.
-.pf-v6-c-text-input-group::before {
-    border: var(--pf-t--global--border--width--control--default, 1px) solid var(--pf-t--global--border--color--default, #c7c7c7);
+// The shared components from pkg/lib import their own stylesheets, so
+// there is nothing to pull in for them here.
+
+// Everything below is specific to this page. There is deliberately very
+// little of it: PatternFly's own components and utility classes cover the
+// layout, and anything fixed here instead of upstream tends to drift out
+// of step with the rest of Cockpit.
+
+// The refresh control spins while connections are being re-read.
+@keyframes samba-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-// Give text inputs and search boxes the slightly-rounded corners other Cockpit
-// plugins use. The same version skew zeroes out the inherited border-radius, so
-// set it explicitly on the form control, the search/text input group, and the
-// ::before overlay that actually paints the border.
-.pf-v6-c-form-control,
-.pf-v6-c-form-control::before,
-.pf-v6-c-form-control::after,
-.pf-v6-c-text-input-group,
-.pf-v6-c-text-input-group::before {
-    border-radius: var(--pf-t--global--border--radius--small, 6px);
+.samba-spinning svg {
+  animation: samba-spin 1s linear infinite;
 }
 
-// Same version-skew issue: .pf-v6-c-card's border also resolves to nothing.
-// Plain cards (isPlain) are exempt — they render as borderless content directly
-// on the page surface, like the Accounts list on the Accounts page.
-.pf-v6-c-card:not(.pf-m-plain) {
-    border: var(--pf-t--global--border--width--box--default, 1px) solid var(--pf-t--global--border--color--default, #c7c7c7);
+// The live log stream. CodeBlock supplies the monospace styling; this
+// only bounds its height and lets it scroll, so that the modal stays a
+// fixed size no matter how much output arrives.
+.samba-log-scroll {
+  block-size: 22rem;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
-// Expand toggle chevron: react-core 6.1 renders an AngleRight caret, but the
-// bundled react-styles 6.6 CSS (and the built-in Accounts page) expect the
-// AngleDown glyph — collapsed points down, expanded rotates to point up.
-// Swap the glyph via a mask so it matches Accounts exactly.
-.pf-v6-c-card__header-toggle-icon {
-    display: inline-block;
-    transition: transform 0.2s ease;
-    transform: rotate(0deg);
-
-    svg {
-        display: none;
-    }
-
-    &::before {
-        content: "";
-        display: block;
-        width: 1em;
-        height: 1em;
-        background-color: currentcolor;
-        mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'><path d='M18.71 5.29a.996.996 0 0 0-1.41 0l-7.29 7.29-7.3-7.29a.987.987 0 0 0-1.41-.02.987.987 0 0 0-.02 1.41l.02.02 7.65 7.65c.29.29.68.44 1.06.44s.77-.15 1.06-.44l7.65-7.65a.996.996 0 0 0 0-1.41Z'/></svg>") no-repeat center / contain;
-    }
-}
-
-.pf-v6-c-card.pf-m-expanded .pf-v6-c-card__header-toggle-icon {
-    transform: rotate(-180deg);
-}
-
-// Center the toggle, title, and actions on one line in card headers (the
-// skew leaves them top-aligned).
-.pf-v6-c-card__header {
-    align-items: center;
-}
-
-// The stock CSS pins the toggle to the top of the header row
-// (align-self: flex-start) and compensates with a margin-block-start whose
-// token chain is broken (resolves to 0), leaving the chevron floating high
-// next to the title. Center it instead.
-.pf-v6-c-card__header-toggle {
-    align-self: center;
-    margin-block: 0;
-}
-
-// The single white rounded content surface the whole plugin sits on, matching
-// the layout of built-in pages like Accounts: gray page background around it,
-// generous padding inside it.
-.samba-surface {
-    margin: var(--pf-t--global--spacer--sm, 8px);
-    padding: var(--pf-t--global--spacer--lg, 24px);
-    background: var(--pf-t--global--background--color--primary--default, #fff);
-    border-radius: var(--pf-t--global--border--radius--large, 16px);
-}
-
-// Table headers: bold at Cockpit's compact header size, matching the tables
-// on the Accounts page. The bold weight is another broken-token casualty.
-// Covers both the shares table and the users table in the access modal
-// (sortable headers render a button and a text span inside the th, so style
-// those too).
-.pf-v6-c-table thead th,
-.pf-v6-c-table thead .pf-v6-c-table__button,
-.pf-v6-c-table thead .pf-v6-c-table__text {
-    // Literal 700: the --font--weight--body--bold token resolves to 500,
-    // which our two-weight (400/700) Red Hat Text faces render as regular.
-    font-weight: 700;
-    font-size: var(--pf-t--global--font--size--sm, 0.875rem);
-}
-
-// Shares table's auto layout otherwise squeezes this sortable header down to
-// "S..." — the sort button's text/icon need more room than the browser gives
-// the column by default. PatternFly's Th `width` percentage prop has no
-// effect here (it only sets a CSS variable consumed under table-layout:
-// fixed, which this table doesn't use), so a real min-width is needed.
-// Extra specificity (element + two classes) is required to beat PatternFly's
-// own `.pf-v6-c-table .pf-v6-c-table__sort` min-width rule on the same <th>.
-.pf-v6-c-table th.samba-col-share-name {
-    min-width: 180px;
-}
-
-// Checkbox groups in the modals (Create New Share options, Create Missing
-// Directory ACL toggle): aligned rows with comfortable spacing, on the plain
-// modal background.
-.samba-option-panel {
-    padding-block: var(--pf-t--global--spacer--sm, 8px);
-}
-
-.samba-option-panel .pf-v6-c-check + .pf-v6-c-check {
-    margin-block-start: var(--pf-t--global--spacer--md, 16px);
-}
-
-// Expanded service details: label-over-value groups laid out in a row, terms
-// in the small bold subtle style used by the built-in overview pages, with
-// the refresh control on the right.
-.samba-service-details {
-    display: flex;
-    gap: var(--pf-t--global--spacer--md, 16px);
-    align-items: flex-start;
-    justify-content: space-between;
-}
-
-.samba-service-details-list.pf-v6-c-description-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--pf-t--global--spacer--md, 16px) var(--pf-t--global--spacer--2xl, 48px);
-}
-
-.samba-service-details-list .pf-v6-c-description-list__group {
-    display: grid;
-    row-gap: var(--pf-t--global--spacer--xs, 4px);
-}
-
-.samba-service-details-list .pf-v6-c-description-list__term {
-    font-size: var(--pf-t--global--font--size--sm, 0.875rem);
-    font-weight: 700;
-    color: var(--pf-t--global--text--color--subtle, #6a6e73);
-}
-
-// Refresh icon: spin while a reload is running.
-@keyframes samba-refresh-spin {
-    to {
-        transform: rotate(360deg);
-    }
-}
-
-.samba-refresh-spinning svg {
-    animation: samba-refresh-spin 0.8s linear infinite;
-}
-
-// Per-share connection breakdown (smbstatus -S), shown under the summary
-// stats when the service card is expanded. Heading styled like the stat
-// terms above it for visual consistency.
-.samba-connections {
-    margin-block-start: var(--pf-t--global--spacer--lg, 24px);
-}
-
-.samba-connections-heading {
-    font-size: var(--pf-t--global--font--size--sm, 0.875rem);
-    font-weight: 700;
-    color: var(--pf-t--global--text--color--subtle, #6a6e73);
-    margin-block-end: var(--pf-t--global--spacer--sm, 8px);
-}
-
-.samba-connections-empty {
-    color: var(--pf-t--global--text--color--subtle, #6a6e73);
-    margin: 0;
-}
-
-// Live log stream in the Logs modal: terminal-style monospace box that
-// scrolls; kept dark in both themes like a real terminal.
-.samba-log-view {
-    height: 320px;
-    margin-block-start: var(--pf-t--global--spacer--md, 16px);
-    margin-block-end: 0;
-    padding: var(--pf-t--global--spacer--md, 16px);
-    overflow-y: auto;
-    font-family: "Red Hat Mono", RedHatMono, monospace;
-    font-size: var(--pf-t--global--font--size--sm, 0.875rem);
-    white-space: pre-wrap;
-    word-break: break-all;
-    color: #d2d2d2;
-    background: #151515;
-    border-radius: var(--pf-t--global--border--radius--small, 6px);
-}
-
-// Horizontal form layout (labels left, controls right) like the Accounts
-// create/edit dialogs — the stock grid tokens for pf-m-horizontal don't
-// resolve, so define the two-column grid explicitly.
-.pf-v6-c-form.pf-m-horizontal .pf-v6-c-form__group {
-    display: grid;
-    grid-template-columns: 160px 1fr;
-    column-gap: var(--pf-t--global--spacer--md, 16px);
-    align-items: start;
-}
-
-.pf-v6-c-form.pf-m-horizontal .pf-v6-c-form__group-label {
-    // Visually center single-line labels against their ~40px-tall control
-    // while keeping labels of tall controls (e.g. the options panel) at top.
-    padding-block-start: 10px;
-}
-
-// More version-skew repairs below: these properties all resolve to nothing
-// because the react-styles CSS (6.6.0) references tokens the bundled
-// patternfly.css (6.1.0) doesn't define.
-
-// Checkbox layout: the input and its label lose their two-column grid and end
-// up stacked/misaligned. Force explicit grid placement with the box vertically
-// centered against the label text.
-.pf-v6-c-check {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    column-gap: var(--pf-t--global--spacer--sm, 8px);
-    align-items: center;
-}
-
-.pf-v6-c-check > .pf-v6-c-check__input {
-    grid-column: 1;
-    grid-row: 1;
-    margin: 0;
-}
-
-.pf-v6-c-check > .pf-v6-c-check__label {
-    grid-column: 2;
-    grid-row: 1;
-}
-
-// The modal body ships without any bottom padding, so its last element (e.g.
-// the ACL checkbox in the Create Missing Directory modal) sits flush against
-// the scroll edge and gets visually cut off.
-.pf-v6-c-modal-box__body {
-    padding-block-end: var(--pf-t--global--spacer--lg, 24px);
-}
-
-// The typeahead multi-select toggle (Valid users/groups field) loses its
-// border like the other form controls — give it the same rounded outline.
-.pf-v6-c-menu-toggle.pf-m-typeahead {
-    background: var(--pf-t--global--background--color--primary--default, #fff);
-    border: var(--pf-t--global--border--width--control--default, 1px) solid var(--pf-t--global--border--color--default, #c7c7c7);
-    border-radius: var(--pf-t--global--border--radius--small, 6px);
-}
-
-// CTA buttons (Create new share, Save, Delete, ...) lose their inline padding,
-// leaving the label cramped against the pill edges. The button CSS pads via
-// its own custom properties, whose token chain fails to resolve — define the
-// properties so PF's original padding declarations work again, and set the
-// longhand explicitly on CTA variants as a fallback.
-.pf-v6-c-button:not(.pf-m-plain) {
-    --pf-v6-c-button--PaddingInlineStart: var(--pf-t--global--spacer--lg, 24px);
-    --pf-v6-c-button--PaddingInlineEnd: var(--pf-t--global--spacer--lg, 24px);
-}
-
-.pf-v6-c-button.pf-m-primary,
-.pf-v6-c-button.pf-m-secondary,
-.pf-v6-c-button.pf-m-danger {
-    /* stylelint-disable-next-line declaration-no-important */
-    padding-inline: var(--pf-t--global--spacer--lg, 24px) !important;
-}
-
-// Don't let the flex layout in card-header action rows squeeze the CTA button
-// narrower than its text + padding (which visually collapses the pill onto
-// the label even though the computed padding is correct).
-.pf-v6-c-card__actions .pf-v6-c-button {
-    flex-shrink: 0;
-    min-width: fit-content;
-    white-space: nowrap;
-}
-
-// Plain icon buttons (ellipsis menus, modal close X) and link buttons (the
-// "Cancel" footer actions) lose their hover border-radius and show a hard
-// grey square on hover; round them slightly like the text inputs.
-.pf-v6-c-button.pf-m-plain,
-.pf-v6-c-button.pf-m-link,
-.pf-v6-c-menu-toggle.pf-m-plain {
-    border-radius: var(--pf-t--global--border--radius--small, 6px);
-}
-
-// Status/fix icons in the shares table (missing folder, SELinux): plain
-// icon buttons (no padding pushing the icon around) with no grey hover/focus
-// highlight — their meaning is conveyed by the tooltip instead. Color is set
-// per status via a modifier class rather than inline, since danger/warning
-// are the only two variants.
-.pf-v6-c-button.samba-status-icon {
-    padding: 0;
-}
-
-.pf-v6-c-button.samba-status-icon:hover,
-.pf-v6-c-button.samba-status-icon:focus,
-.pf-v6-c-button.samba-status-icon:active {
-    background-color: transparent;
-}
-
-.samba-status-icon--danger {
-    color: var(--pf-t--global--text--color--status--danger--default, #c9190b);
-}
-
-.samba-status-icon--warning {
-    color: var(--pf-t--global--icon--color--status--warning--default, #f0ab00);
-}
-
-// Wrapping row of small chips/labels (share attribute badges, per-share
-// connection labels).
-.samba-label-row {
-    display: flex;
-    gap: var(--pf-t--global--spacer--sm, 8px);
-    flex-wrap: wrap;
-}
-
-// Read-only/editable full smb.conf text areas (Global Settings,
-// Backup/Restore) — rendered as preformatted monospace text.
-.samba-conf-textarea {
-    font-family: "Red Hat Mono", RedHatMono, monospace;
-    white-space: pre;
-}
-
-// Table "no results" placeholder cells (Shares table, Users table).
-.samba-empty-cell {
-    padding: var(--pf-t--global--spacer--xl, 32px);
-}
-
-// Small stand-in for a bottom-margin utility: this project's PatternFly CSS
-// only bundles patternfly.css, not the separate spacing-utilities stylesheet,
-// so there's no pf-v6-u-mb-md available to reach for here.
-.samba-mb-md {
-    margin-block-end: var(--pf-t--global--spacer--md, 16px);
-}
-
-// --- Mobile ---
-
-@media (width <= 767px) {
-    // CardHeader never wraps title vs. actions on its own (it's a plain
-    // single-row flex with no responsive behavior built in), so the Shares
-    // card's search+divider+button row would otherwise overflow off-screen
-    // instead of dropping to its own line below the title.
-    .pf-v6-c-card__header {
-        flex-wrap: wrap;
-        row-gap: var(--pf-t--global--spacer--sm, 8px);
-    }
-
-    .pf-v6-c-card__actions {
-        inline-size: 100%;
-    }
-
-    // Below this width the fixed 160px label column (see the pf-m-horizontal
-    // rule above) leaves too little room for the control; stack label above
-    // control instead, matching how PF's own horizontal forms degrade.
-    .pf-v6-c-form.pf-m-horizontal .pf-v6-c-form__group {
-        grid-template-columns: 1fr;
-        row-gap: var(--pf-t--global--spacer--xs, 4px);
-    }
-
-    .pf-v6-c-form.pf-m-horizontal .pf-v6-c-form__group-label {
-        padding-block-start: 0;
-    }
-
-    // Tighter page inset on phones so the content gets the width instead of
-    // the gutters.
-    .samba-surface {
-        margin: var(--pf-t--global--spacer--xs, 4px);
-        padding: var(--pf-t--global--spacer--md, 16px);
-    }
-
-    // Keep modals on-screen regardless of what the (broken-token) modal width
-    // variables resolve to.
-    .pf-v6-c-modal-box {
-        max-width: calc(100vw - 16px);
-    }
+// The [global] editor holds configuration file text, which is column
+// aligned and must not be reflowed.
+.samba-conf-editor {
+  font-family: var(--pf-t--global--font--family--mono);
+  white-space: pre;
 }
