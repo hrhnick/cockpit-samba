@@ -17,19 +17,37 @@ If Samba is not installed, the page offers to install it through PackageKit.
 
 ## Installing
 
-Packages for each release are attached to it on the [releases
-page](https://github.com/hrhnick/cockpit-samba/releases): an RPM, a Debian
-package, and a source tarball.
+Every release carries a Debian package, an RPM, a zip of the built page, and a
+source tarball, on the [releases
+page](https://github.com/hrhnick/cockpit-samba/releases).
+
+The packages are named without a version, so the newest one always has the same
+address and can be fetched by a script:
+
+```sh
+BASE=https://github.com/hrhnick/cockpit-samba/releases/latest/download
+
+# Debian, Ubuntu
+curl -LO $BASE/cockpit-samba-latest.deb && sudo apt install ./cockpit-samba-latest.deb
+
+# Fedora, RHEL, CentOS
+sudo dnf install $BASE/cockpit-samba-latest.rpm
+```
+
+Which version you actually got is recorded in the package itself:
+`dpkg-deb -f cockpit-samba-latest.deb Version`, or `rpm -qp --qf '%{VERSION}\n'`.
 
 On a distribution without a package, use the zip, which unpacks to a single
 `samba` directory:
 
 ```sh
+curl -LO $BASE/cockpit-samba-latest.zip
+
 # for everyone on the machine
-sudo unzip cockpit-samba-VERSION.zip -d /usr/share/cockpit/
+sudo unzip cockpit-samba-latest.zip -d /usr/share/cockpit/
 
 # or for the current user only
-unzip cockpit-samba-VERSION.zip -d ~/.local/share/cockpit/
+unzip cockpit-samba-latest.zip -d ~/.local/share/cockpit/
 ```
 
 Reload the browser and the page appears under *Samba shares*.

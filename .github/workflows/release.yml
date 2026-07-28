@@ -71,8 +71,18 @@ jobs:
 
           TAG_VERSION="$(git describe --tags)"
           REPO_NAME="${GITHUB_REPOSITORY#*/}"
-          ASSETS="${REPO_NAME}-${TAG_VERSION}.tar.xz ${REPO_NAME}-${TAG_VERSION}.zip"
-          ASSETS="${ASSETS} $(ls *.noarch.rpm)"
+
+          # The source tarball keeps its versioned name: the RPM spec fetches it
+          # by version in Source0, and packit builds from it.
+          ASSETS="${REPO_NAME}-${TAG_VERSION}.tar.xz"
+
+          # The packages get a fixed name, so that
+          #   /releases/latest/download/cockpit-samba-latest.rpm
+          # can be fetched by a script that does not know the version. Each
+          # package still records its real version internally.
+          cp "$(ls *.noarch.rpm)" "${REPO_NAME}-latest.rpm"
+          cp "${REPO_NAME}-${TAG_VERSION}.zip" "${REPO_NAME}-latest.zip"
+          ASSETS="${ASSETS} ${REPO_NAME}-latest.rpm ${REPO_NAME}-latest.zip"
 
           # The release can already exist: publishing one from the GitHub web
           # interface creates the tag, which is what triggers this workflow,
@@ -116,4 +126,9 @@ jobs:
         run: make deb
 
       - name: Attach it to the release
-        run: gh release upload "$(git describe --tags)" *.deb --clobber
+        run: |
+          set -eux
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          # Fixed name, matching the other packages; see the source job.
+          cp "$(ls *.deb)" "${REPO_NAME}-latest.deb"
+          gh release upload "$(git describe --tags)" "${REPO_NAME}-latest.deb" --clobber
