@@ -20,6 +20,7 @@ import {
     readShares, removeSection, serializeConf, setAuditEnabled, setGlobalText,
     setParam, writeShare, type Share,
 } from "../src/samba/conf";
+import { isProtectedPath, normalizePath } from "../src/samba/paths";
 
 const SAMPLE = `#
 # A hand written smb.conf
@@ -422,4 +423,54 @@ test("guest mapping is recognised however it is spelled", () => {
     const conf = parseConf("[global]\n\tworkgroup = X\n");
     acceptGuestLogins(conf);
     assert.equal(guestLoginsAccepted(conf), true);
+});
+
+/* --- Folders this page refuses to take over ---------------------------- */
+
+/* Setting a share folder's permissions closes it to everyone but the
+   share's users, and that is not recursive but traversal is: doing it to /
+   takes every path on the machine away from every non-root process. */
+
+test("paths are collapsed to one form before being judged", () => {
+    assert.equal(normalizePath("/srv//media/"), "/srv/media");
+    assert.equal(normalizePath("/srv/./media"), "/srv/media");
+    assert.equal(normalizePath("/srv/samba/../media"), "/srv/media");
+    assert.equal(normalizePath("///"), "/");
+    /* Nothing usable collapses to the root, which is refused, and
+       refusing is the right way to be wrong here. */
+    assert.equal(normalizePath(""), "/");
+});
+
+test("the filesystem root is refused", () => {
+    assert.equal(isProtectedPath("/"), true);
+    assert.equal(isProtectedPath("//"), true);
+    assert.equal(isProtectedPath("  /  "), true);
+    /* A path that walks its way back up to the root is still the root. */
+    assert.equal(isProtectedPath("/srv/.."), true);
+    assert.equal(isProtectedPath("/usr/local/../.."), true);
+});
+
+test("the directories the system needs are refused", () => {
+    for (const path of ["/etc", "/home", "/usr", "/var", "/tmp", "/boot", "/root",
+        "/proc", "/sys", "/dev", "/srv", "/mnt", "/opt",
+        "/usr/local", "/var/log", "/var/tmp"])
+        assert.equal(isProtectedPath(path), true, path);
+
+    /* Trailing slashes must not be a way around it. */
+    assert.equal(isProtectedPath("/home/"), true);
+    assert.equal(isProtectedPath("/usr/local/"), true);
+});
+
+test("an ordinary share folder is allowed", () => {
+    /* Only the shared directory itself is ever modified, so there is no
+       reason to refuse somewhere inside a system directory. */
+    for (const path of ["/srv/media", "/srv/samba/documents", "/home/alice",
+        "/var/www/files", "/usr/local/share/files", "/mnt/usb",
+        "/media/pi/BACKUP"])
+        assert.equal(isProtectedPath(path), false, path);
+
+    /* A dedicated disk mounted at the top level is an ordinary way to set
+       up a file server, so depth alone cannot be the rule. */
+    for (const path of ["/data", "/storage", "/tank", "/pool/share"])
+        assert.equal(isProtectedPath(path), false, path);
 });

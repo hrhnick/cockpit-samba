@@ -115,7 +115,7 @@ class TestApplication(testlib.MachineCase):
         self.assertIn("# a comment worth keeping", config)
         self.assertIn("vfs objects = recycle", config)
 
-    def testServerSettings(self):
+    def testGlobalSettings(self):
         b = self.browser
         m = self.machine
 
@@ -125,7 +125,7 @@ class TestApplication(testlib.MachineCase):
         b.wait_in_text("#samba-shares-list", "globaltest")
 
         b.click("#samba-service-actions")
-        b.click(".pf-v6-c-menu button:contains('Server settings')")
+        b.click(".pf-v6-c-menu button:contains('Global settings')")
         b.wait_visible("#global-settings-dialog")
 
         # The editor shows the [global] body, without its header
@@ -232,6 +232,44 @@ class TestApplication(testlib.MachineCase):
         b.wait_not_present("#fix-permissions-dialog")
 
         self.assertEqual(m.execute("stat -c %U /tmp/permshare").strip(), "admin")
+
+    def testSystemFolderIsRefused(self):
+        """A share pointing at a system directory is not offered its permissions"""
+        b = self.browser
+        m = self.machine
+
+        # /etc exists, so this exercises the guard and not the missing
+        # folder path. Nothing is ever applied, so nothing is changed.
+        m.execute("printf '\\n[etcshare]\\n\\tpath = /etc\\n\\tvalid users = admin\\n'"
+                  " >> /etc/samba/smb.conf")
+
+        self.login_and_go("/samba")
+        b.wait_in_text("#samba-shares-list", "etcshare")
+
+        b.click("#samba-shares-list tr:contains('etcshare') .pf-v6-c-menu-toggle")
+        b.click(".pf-v6-c-menu button:contains('Fix folder permissions')")
+        b.wait_visible("#fix-permissions-dialog")
+        b.wait_in_text("#fix-permissions-dialog", "belongs to the operating system")
+        b.wait_visible("#fix-permissions-dialog button:contains('Apply permissions'):disabled")
+        b.click("#fix-permissions-dialog button:contains('Cancel')")
+        b.wait_not_present("#fix-permissions-dialog")
+
+        # Editing does not offer to take the folder over either
+        b.click("#samba-shares-list tr:contains('etcshare') .pf-v6-c-menu-toggle")
+        b.click(".pf-v6-c-menu button:contains('Edit share')")
+        b.wait_visible("#share-dialog")
+        b.wait_in_text("#share-dialog", "belongs to the operating system")
+        b.wait_not_present("#share-fix-permissions")
+
+        # Pointing it somewhere ordinary brings the option back
+        b.set_input_text("#share-path", "/etc/samba")
+        b.wait_visible("#share-fix-permissions")
+        b.wait_not_in_text("#share-dialog", "belongs to the operating system")
+        b.click("#share-dialog button:contains('Cancel')")
+        b.wait_not_present("#share-dialog")
+
+        # /etc is untouched
+        self.assertEqual(m.execute("stat -c '%U %a' /etc").strip(), "root 755")
 
     def testAccess(self):
         b = self.browser

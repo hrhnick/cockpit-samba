@@ -74,7 +74,10 @@ Reload the browser and the page appears under *Samba shares*.
 - Detects a share whose folder is missing or which SELinux is blocking, and
   offers to fix either
 - *Fix folder permissions* gives the share's users access to the folder itself,
-  which changing the user list does not do on its own
+  which changing the user list does not do on its own. Directories the system
+  needs — `/`, `/etc`, `/home`, `/usr` and the rest — are refused: closing one
+  of those to everyone but a share's users takes everything underneath it
+  along, and on `/` that is the whole machine
 
 **Access** — *Manage access*, in the server card's menu
 

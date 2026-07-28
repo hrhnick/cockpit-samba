@@ -21,8 +21,9 @@ import { TextInput } from "@patternfly/react-core/dist/esm/components/TextInput/
 
 import { DialogFrame } from "../components/dialog";
 import { useAlerts } from "../components/alerts";
-import { grantAccess, sharePrincipals } from "./share-actions";
+import { grantAccess, sharePrincipals, SystemFolderAlert } from "./share-actions";
 import * as client from "../samba/client";
+import { isProtectedPath } from "../samba/paths";
 import { emptyShare, type Share, type SambaConf, writeShare } from "../samba/conf";
 
 const _ = cockpit.gettext;
@@ -133,6 +134,10 @@ export const ShareDialog = ({
 
     const isMissing = needsPath && pathState === "missing";
     const folderExists = needsPath && pathState === "ok";
+    /* A folder whose permissions this page will not take over; see
+       samba/paths.ts. The share itself is still allowed — Samba can serve
+       whatever the admin points it at — but the folder is left alone. */
+    const isSystemFolder = needsPath && !!path && isProtectedPath(path);
     const isValid = !!name && !nameError && !createMaskError && !directoryMaskError &&
         (!needsPath || (!!path && !pathError));
 
@@ -180,14 +185,14 @@ export const ShareDialog = ({
         if (isMissing && createFolder) {
             await client.createDirectory(path);
 
-            if (applyAcls && hasPrincipals)
+            if (applyAcls && hasPrincipals && !isSystemFolder)
                 await grantAccess(next, true, alert);
 
             /* A new directory under /srv or /home gets a label that
                SELinux will not let Samba read. */
             if (await client.isSELinuxEnabled())
                 await client.fixSELinuxContext(path).catch(() => null);
-        } else if (folderExists && fixPermissions && hasPrincipals) {
+        } else if (folderExists && fixPermissions && hasPrincipals && !isSystemFolder) {
             await grantAccess(next, false, alert);
         }
 
@@ -279,7 +284,7 @@ export const ShareDialog = ({
                                   label={_("Create it now")}
                                   isChecked={createFolder}
                                   onChange={(_event, checked) => setCreateFolder(checked)} />
-                        {createFolder && sharePrincipals(form).length > 0 && (
+                        {createFolder && !isSystemFolder && sharePrincipals(form).length > 0 && (
                             <Checkbox id="share-apply-acls"
                                       label={_("Give the users above access to it")}
                                       isChecked={applyAcls}
@@ -295,7 +300,7 @@ export const ShareDialog = ({
             {/* Samba checks the folder's own permissions as well as the
                 share's user list, and changing the one does not change the
                 other. */}
-            {folderExists && sharePrincipals(form).length > 0 && (
+            {folderExists && !isSystemFolder && sharePrincipals(form).length > 0 && (
                 <FormGroup label={_("Folder permissions")} role="group"
                            fieldId="share-fix-permissions" hasNoPaddingTop>
                     <Checkbox id="share-fix-permissions"
@@ -304,6 +309,12 @@ export const ShareDialog = ({
                               isChecked={fixPermissions}
                               onChange={(_event, checked) => setFixPermissions(checked)} />
                 </FormGroup>
+            )}
+
+            {isSystemFolder && (
+                <FormSection>
+                    <SystemFolderAlert path={path} />
+                </FormSection>
             )}
 
             <ExpandableSection toggleText={_("More options")}
