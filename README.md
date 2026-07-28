@@ -101,6 +101,14 @@ npm run watch         # rebuild on change
 make devel-install    # symlink dist/ into ~/.local/share/cockpit
 ```
 
+Packages, if you want to build them by hand:
+
+```sh
+make zip              # the built page, ready to unpack into /usr/share/cockpit
+make deb              # needs build-essential, debhelper, fakeroot, gettext
+make rpm              # needs rpm-build and the spec's BuildRequires
+```
+
 Then open Cockpit at `https://localhost:9090` and go to *Samba shares*.
 
 Checks:
