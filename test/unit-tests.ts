@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2026 cockpit-samba contributors
- * SPDX-License-Identifier: LGPL-2.1-or-later
+ * SPDX-License-Identifier: MIT
  */
 
 /* Unit tests for the smb.conf model. Run with `npm test`.
@@ -16,6 +16,7 @@ import test from "node:test";
 
 import {
     acceptGuestLogins, addSection, emptyShare, getParam, getSection, globalText,
+    guestAccount, guestsShutOut,
     guestLoginsAccepted, isAuditEnabled, normalizeKey, parseBool, parseConf,
     readShares, removeSection, serializeConf, setAuditEnabled, setGlobalText,
     renameSection, setParam, writeShare, type Share,
@@ -503,4 +504,44 @@ test("the model refuses config injection through values and names", () => {
 
     /* Nothing was half-applied along the way. */
     assert.equal(serializeConf(conf), "[a]\n\tpath = /srv\n");
+});
+
+/* --- Guests versus the user list --------------------------------------- */
+
+test("a user list shuts out the guests the share claims to allow", () => {
+    const conf = parseConf("[global]\n\tmap to guest = Bad User\n\n[a]\n\tpath = /srv\n" +
+                           "\tguest ok = yes\n\tvalid users = alice\n");
+    assert.equal(guestsShutOut(conf, readShares(conf)[0]), true);
+
+    /* Naming the guest account is the legitimate way to have both. */
+    const fixed = parseConf("[a]\n\tpath = /srv\n\tguest ok = yes\n\tvalid users = alice, nobody\n");
+    assert.equal(guestsShutOut(fixed, readShares(fixed)[0]), false);
+
+    /* No list, no gate. */
+    const open = parseConf("[a]\n\tpath = /srv\n\tguest ok = yes\n");
+    assert.equal(guestsShutOut(open, readShares(open)[0]), false);
+});
+
+test("the guest account setting is honoured when checking", () => {
+    const conf = parseConf("[global]\n\tguest account = smbguest\n\n" +
+                           "[a]\n\tpath = /srv\n\tguest ok = yes\n\tvalid users = smbguest\n");
+    assert.equal(guestAccount(conf), "smbguest");
+    assert.equal(guestsShutOut(conf, readShares(conf)[0]), false);
+});
+
+/* --- Time Machine size limit ------------------------------------------- */
+
+test("the Time Machine size limit rides along with the share", () => {
+    const on = rewrite("[a]\n\tpath = /srv\n", { timeMachine: true, timeMachineMaxSize: "500G" });
+    assert.match(on.text, /fruit:time machine max size = 500G/);
+    assert.equal(on.share.timeMachineMaxSize, "500G");
+
+    /* Clearing the limit removes the parameter but keeps Time Machine. */
+    const unlimited = rewrite(on.text, { timeMachineMaxSize: "" });
+    assert.doesNotMatch(unlimited.text, /max size/);
+    assert.equal(unlimited.share.timeMachine, true);
+
+    /* Turning Time Machine off takes the limit with it. */
+    const off = rewrite(on.text, { timeMachine: false });
+    assert.doesNotMatch(off.text, /fruit:/);
 });

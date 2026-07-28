@@ -26,7 +26,6 @@
 /dist/
 /metafile.json
 /output/
-/package-lock.json
 /pkg/
 /node_modules/
 /rpmbuild/

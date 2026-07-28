@@ -210,6 +210,30 @@ class TestApplication(testlib.MachineCase):
         self.assertIn("guest ok = yes", config)
         self.assertIn("map to guest = Bad User", config)
 
+    def testGuestUserListConflict(self):
+        """valid users gates guests too, and the page has to say so"""
+        b = self.browser
+        m = self.machine
+
+        # map to guest belongs in [global]; the share below trips the trap
+        m.execute(r"sed -i '/^\[global\]$/a\\tmap to guest = Bad User' /etc/samba/smb.conf")
+        m.execute("printf '\\n[conflictshare]\\n\\tpath = /tmp\\n\\tguest ok = yes\\n"
+                  "\\tvalid users = admin\\n' >> /etc/samba/smb.conf")
+
+        self.login_and_go("/samba")
+        b.wait_in_text("#samba-shares-list", "conflictshare")
+
+        # The expanded row explains the trap
+        b.click("#samba-shares-list tr:contains('conflictshare') .pf-v6-c-table__toggle button")
+        b.wait_in_text("#samba-shares-list", "user list keeps them out")
+
+        # So does the dialog, live as the boxes change
+        b.click("#samba-shares-list tr:contains('conflictshare') .pf-v6-c-menu-toggle")
+        b.click(".pf-v6-c-menu button:contains('Edit share')")
+        b.wait_visible("#share-guest-conflict")
+        b.click("#share-dialog button:contains('Cancel')")
+        b.wait_not_present("#share-dialog")
+
     def testFixFolderPermissions(self):
         """The folder does not follow the share's user list on its own"""
         b = self.browser

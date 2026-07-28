@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /*
- * SPDX-License-Identifier: LGPL-2.1-or-later
+ * SPDX-License-Identifier: MIT
  *
  * Runs test/dialog-tests.tsx, which opens every dialog in a jsdom
  * document to check that it mounts. esbuild bundles it the same way the

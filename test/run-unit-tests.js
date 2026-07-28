@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /*
- * SPDX-License-Identifier: LGPL-2.1-or-later
+ * SPDX-License-Identifier: MIT
  *
  * Runs test/unit-tests.ts, which covers the pure parts of the page (the
  * smb.conf model). esbuild bundles the TypeScript into a single module,

@@ -1,0 +1,45 @@
+# The browser integration tests (test/check-application), which need a
+# test VM and so cannot run in the ordinary checks workflow. GitHub's
+# Linux runners expose /dev/kvm, and the Cockpit tasks container carries
+# everything the test framework needs, so the VM boots right on the
+# runner.
+#
+# Weekly rather than per-push: the run downloads a distribution image and
+# boots it, which costs tens of minutes. It can also be started by hand
+# from the Actions tab against any branch, which is the way to check a
+# risky change before merging it.
+name: integration
+on:
+  schedule:
+    - cron: '0 3 * * 6'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    container:
+      image: ghcr.io/cockpit-project/tasks
+      options: --user root --device=/dev/kvm --shm-size=1024m
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v7
+
+      - name: Pacify git's permission check
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # Fetches the test VM image, installs the built package into it,
+      # boots it, and drives a real browser against the page.
+      - name: Run integration tests
+        run: make check
+
+      - name: Keep the test logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: test-logs
+          path: |
+            Test*.log
+            Test*.png
+            Test*.html
+          if-no-files-found: ignore

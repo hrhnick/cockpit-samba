@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2026 cockpit-samba contributors
- * SPDX-License-Identifier: LGPL-2.1-or-later
+ * SPDX-License-Identifier: MIT
  */
 
 /* Everything that talks to the machine lives here, so the React
@@ -161,6 +161,73 @@ export async function detectServiceUnit(): Promise<string | null> {
 export async function serverVersion(): Promise<string> {
     const out = await runParsed(["smbd", "--version"]).catch(() => "");
     return out.trim().replace(/^Version\s+/i, "");
+}
+
+/* Enable and start a unit together, or stop and disable it. Used for the
+   helper services this page can turn on, where running-but-not-enabled
+   would quietly not survive a reboot. */
+export async function setUnitRunning(unit: string, running: boolean): Promise<void> {
+    await run(["systemctl", running ? "enable" : "disable", "--now", unit]);
+}
+
+/* --- Windows discovery ------------------------------------------------- */
+
+/* Windows finds servers in its Network view through WS-Discovery, which
+   Samba does not speak; wsdd answers those queries for it. Without it a
+   share works but the server never appears in Explorer, which reads as
+   "broken" however healthy the config is. Debian ships the daemon as
+   wsdd or wsdd2, Fedora as wsdd. */
+export const DISCOVERY_UNITS = ["wsdd.service", "wsdd2.service"];
+
+/* --- Firewall ---------------------------------------------------------- */
+
+export type FirewallState = "open" | "blocked" | "inactive";
+
+/* Whether a running firewalld lets SMB through. "inactive" covers both
+   no firewalld and one that is not running — nothing to fix either way.
+   Only the default zone is checked; an admin running multiple zones is
+   making decisions this page should not second-guess. */
+export async function checkFirewall(): Promise<FirewallState> {
+    const state = await runParsed(["firewall-cmd", "--state"]).catch(() => null);
+    if (state === null || state.trim() !== "running")
+        return "inactive";
+
+    const query = await runParsed(["firewall-cmd", "--query-service=samba"]).catch(() => "no");
+    return query.trim() === "yes" ? "open" : "blocked";
+}
+
+/* Allow SMB now and after the next reboot, which are two separate
+   settings in firewalld. */
+export async function openFirewall(): Promise<void> {
+    await run(["firewall-cmd", "--add-service=samba"]);
+    await run(["firewall-cmd", "--permanent", "--add-service=samba"]);
+}
+
+/* --- Configuration health ---------------------------------------------- */
+
+/* What testparm has to say about the live configuration beyond pass or
+ * fail. It warns about deprecated and insecure settings on stderr while
+ * still exiting zero, and our own writes only check the exit code, so
+ * these would otherwise never be seen.
+ *
+ * The shell line is a fixed string with nothing interpolated: it exists
+ * only because testparm prints the whole config to stdout and the
+ * diagnostics to stderr, and the channel can carry one merged stream.
+ */
+export async function configWarnings(): Promise<string[]> {
+    const out = await runParsed(
+        ["sh", "-ec", `exec testparm -s ${SMB_CONF} 2>&1 >/dev/null`])
+            .catch(() => "");
+
+    const seen = new Set<string>();
+    for (const line of out.split("\n")) {
+        const text = line.trim();
+        if (!text || /^Load(ed| smb config)/.test(text) || /^Server role/.test(text))
+            continue;
+        if (/warning|error|deprecated|unknown parameter|ignoring|invalid/i.test(text))
+            seen.add(text);
+    }
+    return [...seen];
 }
 
 /* --- Connections ------------------------------------------------------ */
@@ -356,6 +423,9 @@ export interface SambaUser {
     uid: number;
     fullName: string;
     hasPassword: boolean;
+    /* Every group the account belongs to, for matching against the
+       @group entries in a share's user lists. */
+    groups: string[];
 }
 
 interface PasswdEntry {
@@ -423,18 +493,34 @@ async function sambaAccountNames(): Promise<Set<string>> {
 }
 
 export async function listUsers(): Promise<SambaUser[]> {
-    const [entries, range, sambaNames] = await Promise.all([
-        passwdEntries(), loginUidRange(), sambaAccountNames(),
+    const [entries, range, sambaNames, groups] = await Promise.all([
+        passwdEntries(), loginUidRange(), sambaAccountNames(), getent("group"),
     ]);
+
+    /* Group membership from both directions: the account's primary GID,
+       and the member lists of the other groups. */
+    const byGid = new Map<number, string>();
+    const memberships = new Map<string, string[]>();
+    for (const parts of groups) {
+        if (parts.length < 3)
+            continue;
+        byGid.set(parseInt(parts[2], 10), parts[0]);
+        for (const member of (parts[3] ?? "").split(",").filter(Boolean))
+            memberships.set(member, [...(memberships.get(member) ?? []), parts[0]]);
+    }
 
     return entries
             .filter(entry => entry.uid >= range.min && entry.uid <= range.max && isLoginShell(entry.shell))
-            .map(entry => ({
-                name: entry.name,
-                uid: entry.uid,
-                fullName: entry.gecos.split(",")[0],
-                hasPassword: sambaNames.has(entry.name),
-            }));
+            .map(entry => {
+                const primary = byGid.get(entry.gid);
+                return {
+                    name: entry.name,
+                    uid: entry.uid,
+                    fullName: entry.gecos.split(",")[0],
+                    hasPassword: sambaNames.has(entry.name),
+                    groups: [...new Set([...(primary ? [primary] : []), ...(memberships.get(entry.name) ?? [])])],
+                };
+            });
 }
 
 export async function setPassword(user: string, password: string): Promise<void> {

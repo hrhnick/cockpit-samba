@@ -16,8 +16,9 @@ SPEC=$(RPM_NAME).spec
 PREFIX ?= /usr/local
 APPSTREAMFILE=org.cockpit_project.$(subst -,_,$(PACKAGE_NAME)).metainfo.xml
 VM_IMAGE=$(CURDIR)/test/images/$(TEST_OS)
-# stamp file to check for node_modules/
-NODE_MODULES_TEST=package-lock.json
+# stamp file to check for node_modules/: npm ci leaves this behind, so a
+# fresh checkout installs and an up-to-date tree does not
+NODE_MODULES_TEST=node_modules/.package-lock.json
 # build.js ran in non-watch mode
 DIST_TEST=runtime-npm-modules.txt
 # one example file in pkg/lib to check if it was already checked out
@@ -147,7 +148,7 @@ $(TARFILE): $(DIST_TEST) $(SPEC) packaging/arch/PKGBUILD packaging/debian/change
 	if type appstream-util >/dev/null 2>&1; then appstream-util validate-relax --nonet *.metainfo.xml; fi
 	tar --xz $(TAR_ARGS) -cf $(TARFILE) --transform 's,^,$(RPM_NAME)/,' \
 		--exclude packaging/$(SPEC).in --exclude node_modules \
-		$$(git ls-files) $(COCKPIT_REPO_FILES) $(NODE_MODULES_TEST) $(DIST_TEST) \
+		$$(git ls-files) $(COCKPIT_REPO_FILES) $(DIST_TEST) \
 		$(SPEC) packaging/arch/PKGBUILD packaging/debian/changelog dist/
 
 $(NODE_CACHE): $(NODE_MODULES_TEST)
@@ -246,11 +247,12 @@ check-patternfly: $(COCKPIT_REPO_STAMP)
 bots: $(COCKPIT_REPO_STAMP)
 	test/common/make-bots
 
-$(NODE_MODULES_TEST): package.json
-	# if it exists already, npm install won't update it; force that so that we always get up-to-date packages
-	rm -f package-lock.json
+# Install exactly what the committed package-lock.json pins, so every
+# checkout, CI run and release builds from the same dependency tree. To
+# update dependencies, edit package.json, run `npm install`, and commit
+# the changed lockfile with it.
+$(NODE_MODULES_TEST): package.json package-lock.json
 	# unset NODE_ENV, skips devDependencies otherwise; this often hangs, so try a few times
-	for _ in `seq 3`; do timeout 10m env -u NODE_ENV npm install --ignore-scripts && exit 0; done; exit 1
-	env -u NODE_ENV npm prune
+	for _ in `seq 3`; do timeout 10m env -u NODE_ENV npm ci && exit 0; done; exit 1
 
 .PHONY: all clean install devel-install devel-uninstall print-version dist node-cache rpm prepare-check check check-patternfly vm print-vm

@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2026 cockpit-samba contributors
- * SPDX-License-Identifier: LGPL-2.1-or-later
+ * SPDX-License-Identifier: MIT
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -123,6 +123,35 @@ export function useSambaService(): ServiceState {
     };
 }
 
+/* The WS-Discovery responder, which is what makes this server appear in
+   Windows' Network view. Same two-candidate-unit pattern as the Samba
+   service itself: whichever of wsdd and wsdd2 exists wins. */
+export interface DiscoveryState {
+    unit: string | null;
+    running: boolean;
+    /* False only once we know neither unit exists. */
+    installed: boolean | null;
+}
+
+export function useDiscoveryService(): DiscoveryState {
+    const proxies = useObject<ServiceProxy[], []>(
+        () => client.DISCOVERY_UNITS.map(unit => service.proxy(unit) as unknown as ServiceProxy),
+        null,
+        []);
+
+    useEvent(proxies[0], "changed");
+    useEvent(proxies[1], "changed");
+
+    const active = proxies.find(p => p.exists);
+    const known = proxies.every(p => p.exists !== null);
+
+    return {
+        unit: active ? client.DISCOVERY_UNITS[proxies.indexOf(active)] : null,
+        running: active?.state === "running",
+        installed: active ? true : (known ? false : null),
+    };
+}
+
 /* Whether anyone can see the page. cockpit.hidden covers both a
    background browser tab and the Cockpit shell showing another page,
    neither of which the document's own visibility API reports on its
@@ -219,12 +248,14 @@ export interface PathStatus {
 export function usePathStatus(paths: string[]): {
     status: Record<string, PathStatus>, refresh: () => Promise<void>
 } {
-    /* A stable key, so re-rendering with an equal array does not
-       re-run the checks. */
-    const key = paths.join("\n");
+    /* Deduplicated: two shares can point at one folder, and the checks
+       cost a process each. A stable key, so re-rendering with an equal
+       array does not re-run them. */
+    const unique = [...new Set(paths.filter(Boolean))];
+    const key = unique.join("\n");
 
     const load = useCallback(async () => {
-        const entries = await Promise.all(paths.filter(Boolean).map(async path => {
+        const entries = await Promise.all(unique.map(async path => {
             const state = await client.checkPath(path);
             if (state !== "ok")
                 return [path, { state, selinuxOk: true, disk: null }] as const;

@@ -2,7 +2,9 @@ Name: cockpit-samba
 Version: %{VERSION}
 Release: 1%{?dist}
 Summary: Cockpit module for managing Samba file shares
-License: LGPL-2.1-or-later
+# The project's own code is MIT; the built page bundles pkg/lib from the
+# Cockpit repository, which is LGPL.
+License: MIT AND LGPL-2.1-or-later
 
 # distributions which ship nodejs-esbuild can rebuild the bundle during package build
 %if 0%{?fedora} >= 42
@@ -37,6 +39,11 @@ Requires: cockpit-bridge
 # weak dependency: the module is useful on a machine that does not have a
 # file server yet, and pointless on one that never will.
 Recommends: samba
+# setfacl, which sharing a folder with several users needs
+Recommends: acl
+# answers the WS-Discovery queries that make the server visible in
+# Windows' Network view; the page offers to install it
+Suggests: wsdd
 
 %{NPM_PROVIDES}
 

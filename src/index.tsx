@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2026 cockpit-samba contributors
- * SPDX-License-Identifier: LGPL-2.1-or-later
+ * SPDX-License-Identifier: MIT
  */
 
 /* Variables and fonts first, since the rest is defined in terms of them. */

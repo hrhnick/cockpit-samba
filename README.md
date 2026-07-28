@@ -68,7 +68,10 @@ Reload the browser and the page appears under *Samba shares*.
   one folder
 - Recycle bin, so a file deleted over the network is moved aside rather than
   destroyed
-- Time Machine, which offers the share to macOS as a backup destination
+- Time Machine, which offers the share to macOS as a backup destination, with
+  a cap on how much space the backups may take
+- Warns about combinations that quietly do nothing, like a guest share whose
+  user list keeps guests out
 - Expand a share to see who may connect, free space, how many clients are
   connected, and the network address to copy into a client
 - Detects a share whose folder is missing or which SELinux is blocking, and
@@ -82,12 +85,18 @@ Reload the browser and the page appears under *Samba shares*.
 **Access** — *Manage access*, in the server card's menu
 
 - Give a local account a Samba password, change it, or take its access away
-- See at a glance which accounts can connect
+- See at a glance which accounts can connect, and which shares each one
+  would reach
 - Links to Cockpit's Accounts page for creating the accounts themselves
 
 **Server**
 
 - Status, version and uptime; start, stop and restart; start on boot
+- Windows discovery: one switch installs and runs
+  [wsdd](https://github.com/christgau/wsdd), without which the server never
+  appears in Windows' Network view
+- Notices a firewalld that is blocking SMB and offers to open it, and shows
+  the warnings `testparm` has about the configuration
 - Who is connected, which shares they have open, and whether the connection is
   encrypted and signed; disconnect a client
 - Edit the `[global]` section, with `testparm` validating every change

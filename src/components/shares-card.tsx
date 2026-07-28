@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2026 cockpit-samba contributors
- * SPDX-License-Identifier: LGPL-2.1-or-later
+ * SPDX-License-Identifier: MIT
  */
 
 import React, { useState } from "react";
@@ -109,10 +109,11 @@ const ProblemAlert = ({ share, problem, canEdit, onFixed }: {
     );
 };
 
-const ShareActions = ({ share, shares, guestLoginsAllowed, applyConf, onPathsChanged }: {
+const ShareActions = ({ share, shares, guestLoginsAllowed, guestAccount, applyConf, onPathsChanged }: {
     share: Share;
     shares: Share[];
     guestLoginsAllowed: boolean;
+    guestAccount: string;
     applyConf: (mutate: (conf: SambaConf) => void) => Promise<void>;
     onPathsChanged: () => void;
 }) => {
@@ -123,6 +124,7 @@ const ShareActions = ({ share, shares, guestLoginsAllowed, applyConf, onPathsCha
                       onClick={() => Dialogs.show(
                           <ShareDialog share={share} shares={shares}
                                        guestLoginsAllowed={guestLoginsAllowed}
+                                       guestAccount={guestAccount}
                                        applyConf={applyConf}
                                        onPathsChanged={onPathsChanged} />)}>
             {_("Edit share")}
@@ -166,13 +168,17 @@ export interface SharesCardProps {
     pathStatus: Record<string, PathStatus>;
     connections: Connection[];
     guestLoginsAllowed: boolean;
+    /* The account guests connect as; `valid users` gates it like anyone
+       else, which is worth an alert when a share trips over it. */
+    guestAccount: string;
     applyConf: (mutate: (conf: SambaConf) => void) => Promise<void>;
     onPathsChanged: () => void;
     canEdit: boolean;
 }
 
 export const SharesCard = ({
-    shares, pathStatus, connections, guestLoginsAllowed, applyConf, onPathsChanged, canEdit,
+    shares, pathStatus, connections, guestLoginsAllowed, guestAccount,
+    applyConf, onPathsChanged, canEdit,
 }: SharesCardProps) => {
     const Dialogs = useDialogs();
     const [filter, setFilter] = useState("");
@@ -240,6 +246,7 @@ export const SharesCard = ({
                         ? (
                             <ShareActions share={share} shares={shares}
                                           guestLoginsAllowed={guestLoginsAllowed}
+                                          guestAccount={guestAccount}
                                           applyConf={applyConf}
                                           onPathsChanged={onPathsChanged} />
                         )
@@ -263,6 +270,14 @@ export const SharesCard = ({
                             {fmt_to_fragments(
                                 _("This share allows guests, but the server's $0 setting turns unknown users away before they reach it. Saving the share from $1 sets it."),
                                 <code>map to guest</code>, <strong>{_("Edit share")}</strong>)}
+                        </Alert>
+                    )}
+                    {share.guestOk && guestLoginsAllowed && share.validUsers.length > 0 &&
+                        !share.validUsers.includes(guestAccount) && (
+                        <Alert isInline variant="warning" title={_("Guests are allowed but the user list keeps them out")}>
+                            {cockpit.format(
+                                _("Guests connect as the $0 account, and \"Who can connect\" does not include it. Edit the share and add $0, or clear the list."),
+                                guestAccount)}
                         </Alert>
                     )}
                     <DescriptionList isHorizontal isCompact>
@@ -347,6 +362,7 @@ export const SharesCard = ({
                                     onClick={() => Dialogs.show(
                                         <ShareDialog share={null} shares={shares}
                                                      guestLoginsAllowed={guestLoginsAllowed}
+                                                     guestAccount={guestAccount}
                                                      applyConf={applyConf}
                                                      onPathsChanged={onPathsChanged} />)}>
                                 {_("Create share")}
@@ -387,6 +403,7 @@ export const SharesCard = ({
                                                        onAction: () => Dialogs.show(
                                                            <ShareDialog share={null} shares={shares}
                                                                         guestLoginsAllowed={guestLoginsAllowed}
+                                                                        guestAccount={guestAccount}
                                                                         applyConf={applyConf}
                                                                         onPathsChanged={onPathsChanged} />),
                                                    }} />

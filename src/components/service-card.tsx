@@ -1,14 +1,15 @@
 /*
  * Copyright (C) 2026 cockpit-samba contributors
- * SPDX-License-Identifier: LGPL-2.1-or-later
+ * SPDX-License-Identifier: MIT
  */
 
-import React from "react";
+import React, { useState } from "react";
 
 import cockpit from "cockpit";
 import { useDialogs } from "dialogs";
 import { KebabDropdown } from "cockpit-components-dropdown";
 import { ListingTable } from "cockpit-components-table";
+import { install_dialog } from "cockpit-components-install-dialog";
 import * as timeformat from "timeformat";
 
 import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
@@ -33,9 +34,10 @@ import { GlobalSettingsDialog, BackupRestoreDialog } from "../dialogs/config-dia
 import { DisconnectClientDialog } from "../dialogs/disconnect-dialog";
 import { LogsDialog } from "../dialogs/logs-dialog";
 import { ManageAccessDialog } from "../dialogs/manage-access-dialog";
+import * as client from "../samba/client";
 import { errorString, type Connection } from "../samba/client";
-import type { ServiceState } from "../samba/hooks";
-import type { SambaConf } from "../samba/conf";
+import { useDiscoveryService, type ServiceState } from "../samba/hooks";
+import { readShares, type SambaConf } from "../samba/conf";
 
 const _ = cockpit.gettext;
 
@@ -82,6 +84,36 @@ export const ServiceCard = ({
     const status = stateLabel(service.state);
     const isRunning = service.state === "running";
 
+    const discovery = useDiscoveryService();
+    const [discoveryBusy, setDiscoveryBusy] = useState(false);
+
+    /* Turn the WS-Discovery responder on or off, installing it first if
+       the machine does not have it. Installation adds a unit the page has
+       never seen, so it starts over like the Samba install does. */
+    async function setDiscovery(on: boolean) {
+        setDiscoveryBusy(true);
+        try {
+            if (discovery.unit) {
+                await client.setUnitRunning(discovery.unit, on);
+            } else {
+                await install_dialog("wsdd");
+                await client.setUnitRunning("wsdd.service", true).catch(() => null);
+                window.location.reload();
+            }
+        } catch (exception) {
+            /* A cancelled install dialog rejects with undefined; that is
+               a choice, not a failure. */
+            if (exception !== undefined)
+                alert({
+                    variant: "danger",
+                    title: _("Failed to change Windows discovery"),
+                    detail: errorString(exception),
+                });
+        } finally {
+            setDiscoveryBusy(false);
+        }
+    }
+
     /* Report a failed service action, which otherwise leaves the button
        looking as though nothing happened. */
     const attempt = (what: string, action: () => Promise<void>) => async () => {
@@ -94,7 +126,7 @@ export const ServiceCard = ({
 
     const actions = [
         <DropdownItem key="access" onClick={() => Dialogs.show(
-            <ManageAccessDialog canEdit={canEdit} />)}>
+            <ManageAccessDialog canEdit={canEdit} shares={readShares(conf)} />)}>
             {_("Manage access")}
         </DropdownItem>,
         <DropdownItem key="settings" onClick={() => Dialogs.show(
@@ -247,6 +279,24 @@ export const ServiceCard = ({
                                         onChange={(_event, checked) => attempt(
                                             _("Failed to change whether Samba starts on boot"),
                                             () => service.setEnabled(checked))()} />
+                            </DescriptionListDescription>
+                        </DescriptionListGroup>
+                        <DescriptionListGroup>
+                            <DescriptionListTerm>{_("Windows discovery")}</DescriptionListTerm>
+                            <DescriptionListDescription>
+                                <Flex spaceItems={{ default: "spaceItemsMd" }}
+                                      alignItems={{ default: "alignItemsCenter" }}>
+                                    <Switch id="samba-discovery"
+                                            aria-label={_("Windows discovery")}
+                                            isChecked={discovery.installed === true && discovery.running}
+                                            isDisabled={!canEdit || discoveryBusy || discovery.installed === null}
+                                            onChange={(_event, checked) => setDiscovery(checked)} />
+                                    <span className="samba-subtle">
+                                        {discovery.installed === false
+                                            ? _("Lets Windows computers find this server in their Network view. Turning it on installs wsdd.")
+                                            : _("Lets Windows computers find this server in their Network view.")}
+                                    </span>
+                                </Flex>
                             </DescriptionListDescription>
                         </DescriptionListGroup>
                     </DescriptionList>

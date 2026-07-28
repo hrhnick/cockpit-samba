@@ -6,7 +6,7 @@
   "main": "index.tsx",
   "repository": "https://github.com/hrhnick/cockpit-samba.git",
   "author": "",
-  "license": "LGPL-2.1",
+  "license": "MIT",
   "engines": {
     "node": ">= 18"
   },
