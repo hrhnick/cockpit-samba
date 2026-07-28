@@ -21,12 +21,12 @@ import { TextInput } from "@patternfly/react-core/dist/esm/components/TextInput/
 
 import { DialogFrame } from "../components/dialog";
 import { useAlerts } from "../components/alerts";
-import { grantAccess, sharePrincipals, SystemFolderAlert } from "./share-actions";
+import { grantAccess, SystemFolderAlert } from "./share-actions";
 import * as client from "../samba/client";
 import { isProtectedPath } from "../samba/paths";
-import { emptyShare, type Share, type SambaConf, writeShare } from "../samba/conf";
-
-const fmt = cockpit.format;
+import {
+    emptyShare, guestsShutOut, sharePrincipals, writeShare, type SambaConf, type Share,
+} from "../samba/conf";
 
 const _ = cockpit.gettext;
 
@@ -162,13 +162,12 @@ export const ShareDialog = ({
         ? form.writeList.filter(w => !form.validUsers.includes(w))
         : [];
     const writeListError = shutOutWriters.length > 0
-        ? fmt(_("$0 cannot connect to the share: \"Access for\" is set and does not include them."),
-              shutOutWriters.join(", "))
+        ? cockpit.format(_("$0 cannot connect to the share: \"Access for\" is set and does not include them."),
+                         shutOutWriters.join(", "))
         : "";
 
     /* The same gate catches guests: they connect as the guest account. */
-    const guestsShutOut = form.guestOk && form.validUsers.length > 0 &&
-        !form.validUsers.includes(guestAccount);
+    const guestsExcluded = guestsShutOut(form, guestAccount);
 
     const isMissing = needsPath && pathState === "missing";
     const folderExists = needsPath && pathState === "ok";
@@ -317,12 +316,12 @@ export const ShareDialog = ({
 
             {/* Warned rather than blocked: adding the guest account to
                 the list is a legitimate way to have both. */}
-            {guestsShutOut && (
+            {guestsExcluded && (
                 <FormSection>
                     <Alert isInline variant="warning" id="share-guest-conflict"
                            title={_("Guests are allowed but cannot get in")}>
-                        {fmt(_("Guests connect as the $0 account, and \"Access for\" does not include it. Add $0 to the list, or clear the list."),
-                             guestAccount)}
+                        {cockpit.format(_("Guests connect as the $0 account, and \"Access for\" does not include it. Add $0 to the list, or clear the list."),
+                                        guestAccount)}
                     </Alert>
                 </FormSection>
             )}

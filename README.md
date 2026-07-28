@@ -160,6 +160,13 @@ make check            # browser integration tests, needs a test VM
 Everything except `make check` runs on every push and pull request, through
 `.github/workflows/checks.yml`.
 
+`make check` is run by hand, on a machine that has libvirt. It boots a real VM
+and drives a browser against the page, and the test framework it uses expects a
+libvirt daemon to already be listening — which a developer's machine and
+Cockpit's own CI both provide, and a GitHub Actions container does not. Running
+it in Actions was tried and abandoned; the routes that would work are Packit and
+Testing Farm, which provision real machines.
+
 `pkg/lib` is checked out from the [Cockpit
 repository](https://github.com/cockpit-project/cockpit) by the Makefile at the
 commit pinned in `COCKPIT_REPO_COMMIT`, and its components are written against

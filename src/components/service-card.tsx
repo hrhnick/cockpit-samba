@@ -30,6 +30,7 @@ import { Flex } from "@patternfly/react-core/dist/esm/layouts/Flex/index.js";
 import { SyncAltIcon } from "@patternfly/react-icons";
 
 import { useAlerts } from "./alerts";
+import { ShareLabels } from "./labels";
 import { GlobalSettingsDialog, BackupRestoreDialog } from "../dialogs/config-dialogs";
 import { DisconnectClientDialog } from "../dialogs/disconnect-dialog";
 import { LogsDialog } from "../dialogs/logs-dialog";
@@ -223,11 +224,7 @@ export const ServiceCard = ({
         columns: [
             { title: connection.username || <span className="samba-subtle">{_("Guest")}</span> },
             {
-                title: (
-                    <Flex spaceItems={{ default: "spaceItemsSm" }}>
-                        {connection.shares.map(share => <Label key={share} isCompact>{share}</Label>)}
-                    </Flex>
-                )
+                title: <ShareLabels shares={connection.shares} />
             },
             { title: connection.machine },
             { title: connection.connectedAt ? timeformat.dateTime(connection.connectedAt) : "" },

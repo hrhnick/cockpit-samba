@@ -31,14 +31,14 @@ import { Stack } from "@patternfly/react-core/dist/esm/layouts/Stack/index.js";
 import { ExclamationCircleIcon, ExclamationTriangleIcon, FolderIcon, SearchIcon } from "@patternfly/react-icons";
 import { SortByDirection } from "@patternfly/react-table";
 
+import { PrincipalLabels } from "./labels";
 import { ShareDialog } from "../dialogs/share-dialog";
 import {
     CreateDirectoryDialog, DeleteShareDialog, FixPermissionsDialog, FixSELinuxDialog,
-    sharePrincipals,
 } from "../dialogs/share-actions";
 import type { Connection } from "../samba/client";
 import type { PathStatus } from "../samba/hooks";
-import type { SambaConf, Share } from "../samba/conf";
+import { guestsShutOut, sharePrincipals, type SambaConf, type Share } from "../samba/conf";
 
 const _ = cockpit.gettext;
 
@@ -152,17 +152,6 @@ const ShareActions = ({ share, shares, guestLoginsAllowed, guestAccount, applyCo
     return <KebabDropdown dropdownItems={items} />;
 };
 
-/* A list of users or groups as the chips the Accounts page uses. */
-const PrincipalLabels = ({ principals }: { principals: string[] }) => (
-    <Flex spaceItems={{ default: "spaceItemsSm" }}>
-        {principals.map(name => (
-            <Label key={name} color={name.startsWith("@") ? "yellow" : "blue"} isCompact>
-                {name}
-            </Label>
-        ))}
-    </Flex>
-);
-
 export interface SharesCardProps {
     shares: Share[];
     pathStatus: Record<string, PathStatus>;
@@ -272,8 +261,7 @@ export const SharesCard = ({
                                 <code>map to guest</code>, <strong>{_("Edit share")}</strong>)}
                         </Alert>
                     )}
-                    {share.guestOk && guestLoginsAllowed && share.validUsers.length > 0 &&
-                        !share.validUsers.includes(guestAccount) && (
+                    {guestLoginsAllowed && guestsShutOut(share, guestAccount) && (
                         <Alert isInline variant="warning" title={_("Guests are allowed but the user list keeps them out")}>
                             {cockpit.format(
                                 _("Guests connect as the $0 account, and \"Who can connect\" does not include it. Edit the share and add $0, or clear the list."),

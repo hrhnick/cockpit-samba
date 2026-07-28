@@ -15,16 +15,9 @@ import { ConfirmDialog, DialogFrame } from "../components/dialog";
 import { useAlerts, type AlertRequest } from "../components/alerts";
 import * as client from "../samba/client";
 import { isProtectedPath, normalizePath } from "../samba/paths";
-import { removeSection, type SambaConf, type Share } from "../samba/conf";
+import { removeSection, sharePrincipals, type SambaConf, type Share } from "../samba/conf";
 
 const _ = cockpit.gettext;
-
-/* The accounts a share names, and so the ones its folder has to let in:
-   whoever may connect, plus anyone who may write even when it is read
-   only. */
-export function sharePrincipals(share: Share): string[] {
-    return [...new Set([...share.validUsers, ...share.writeList])];
-}
 
 /* setfacl comes from the acl package, which Debian and its derivatives do
    not install by default. Without it a share for several users falls back

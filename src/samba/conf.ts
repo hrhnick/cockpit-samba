@@ -653,10 +653,18 @@ export function guestAccount(conf: SambaConf): string {
 }
 
 /* Whether this share's user list shuts out the guests it claims to
-   allow. */
-export function guestsShutOut(conf: SambaConf, share: Share): boolean {
-    return share.guestOk && share.validUsers.length > 0 &&
-        !share.validUsers.includes(guestAccount(conf));
+   allow. `guest` is the account guests connect as, from guestAccount();
+   taking it as an argument rather than re-deriving it lets the dialog
+   ask about a share it is still editing, which has no config yet. */
+export function guestsShutOut(share: Share, guest: string): boolean {
+    return share.guestOk && share.validUsers.length > 0 && !share.validUsers.includes(guest);
+}
+
+/* The accounts a share names, and so the ones its folder has to let in:
+   whoever may connect, plus anyone who may write even when it is read
+   only. */
+export function sharePrincipals(share: Share): string[] {
+    return [...new Set([...share.validUsers, ...share.writeList])];
 }
 
 /* --- [global] --------------------------------------------------------- */

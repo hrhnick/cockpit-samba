@@ -77,23 +77,45 @@ export interface ServiceState {
     setEnabled: (enabled: boolean) => Promise<void>;
 }
 
-/* The smbd unit, live over systemd's D-Bus API rather than by polling
-   `systemctl is-active`. */
-export function useSambaService(): ServiceState {
-    /* Both candidate unit names get a proxy; whichever exists wins.
-       Creating a proxy for a unit that does not exist is harmless. */
+/* Whichever of several candidate unit names this machine actually has.
+ *
+ * Distributions disagree about naming — smb against smbd, wsdd against
+ * wsdd2 — and asking systemd for a unit that does not exist is harmless,
+ * so every candidate gets a proxy and the one that turns out to exist
+ * wins. Subscribing in a loop rather than naming each proxy keeps the
+ * number of candidates out of the hook: a third spelling would otherwise
+ * be watched by nobody, and the page would simply never notice it.
+ */
+function useUnitProxy(units: string[]): {
+    proxy: ServiceProxy | undefined, unit: string | null, installed: boolean | null
+} {
     const proxies = useObject<ServiceProxy[], []>(
-        () => client.SERVICE_UNITS.map(unit => service.proxy(unit) as unknown as ServiceProxy),
+        () => units.map(unit => service.proxy(unit) as unknown as ServiceProxy),
         null,
         []);
 
-    useEvent(proxies[0], "changed");
-    useEvent(proxies[1], "changed");
+    const [, rerender] = useState(0);
+    useEffect(() => {
+        const changed = () => rerender(n => n + 1);
+        proxies.forEach(p => p.addEventListener("changed", changed));
+        return () => proxies.forEach(p => p.removeEventListener("changed", changed));
+    }, [proxies]);
 
-    const active = proxies.find(p => p.exists);
+    const proxy = proxies.find(p => p.exists);
     /* exists starts out null and becomes a boolean once known. */
     const known = proxies.every(p => p.exists !== null);
-    const installed = active ? true : (known ? false : null);
+
+    return {
+        proxy,
+        unit: proxy ? units[proxies.indexOf(proxy)] : null,
+        installed: proxy ? true : (known ? false : null),
+    };
+}
+
+/* The smbd unit, live over systemd's D-Bus API rather than by polling
+   `systemctl is-active`. */
+export function useSambaService(): ServiceState {
+    const { proxy: active, unit, installed } = useUnitProxy(client.SERVICE_UNITS);
 
     const call = useCallback(async (method: "start" | "stop" | "restart") => {
         if (active)
@@ -108,7 +130,7 @@ export function useSambaService(): ServiceState {
         : null;
 
     return {
-        unit: active ? client.SERVICE_UNITS[proxies.indexOf(active)] : null,
+        unit,
         state: active?.state,
         enabled: active?.enabled,
         activeSince,
@@ -134,22 +156,8 @@ export interface DiscoveryState {
 }
 
 export function useDiscoveryService(): DiscoveryState {
-    const proxies = useObject<ServiceProxy[], []>(
-        () => client.DISCOVERY_UNITS.map(unit => service.proxy(unit) as unknown as ServiceProxy),
-        null,
-        []);
-
-    useEvent(proxies[0], "changed");
-    useEvent(proxies[1], "changed");
-
-    const active = proxies.find(p => p.exists);
-    const known = proxies.every(p => p.exists !== null);
-
-    return {
-        unit: active ? client.DISCOVERY_UNITS[proxies.indexOf(active)] : null,
-        running: active?.state === "running",
-        installed: active ? true : (known ? false : null),
-    };
+    const { proxy, unit, installed } = useUnitProxy(client.DISCOVERY_UNITS);
+    return { unit, running: proxy?.state === "running", installed };
 }
 
 /* Whether anyone can see the page. cockpit.hidden covers both a
