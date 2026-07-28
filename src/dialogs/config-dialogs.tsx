@@ -32,7 +32,7 @@ export const GlobalSettingsDialog = ({ conf, applyConf }: {
 
     return (
         <DialogFrame id="global-settings-dialog"
-                     title={_("Server settings")}
+                     title={_("Global settings")}
                      description={fmt_to_fragments(
                          _("The $0 section of the Samba configuration. Changes are checked with $1 before they are saved."),
                          <code>[global]</code>, <code>testparm</code>)}
@@ -42,7 +42,7 @@ export const GlobalSettingsDialog = ({ conf, applyConf }: {
                 <TextArea id="global-settings-text"
                           value={text}
                           onChange={(_event, value) => setText(value)}
-                          aria-label={_("Server settings")}
+                          aria-label={_("Global settings")}
                           resizeOrientation="vertical"
                           rows={16}
                           className="samba-conf-editor" />

@@ -99,7 +99,7 @@ export const ServiceCard = ({
         </DropdownItem>,
         <DropdownItem key="settings" onClick={() => Dialogs.show(
             <GlobalSettingsDialog conf={conf} applyConf={applyConf} />)}>
-            {_("Server settings")}
+            {_("Global settings")}
         </DropdownItem>,
         <DropdownItem key="logs" onClick={() => Dialogs.show(
             <LogsDialog conf={conf} unit={service.unit} applyConf={applyConf} canEdit={canEdit} />)}>

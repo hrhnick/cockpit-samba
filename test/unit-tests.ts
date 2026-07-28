@@ -18,8 +18,9 @@ import {
     acceptGuestLogins, addSection, emptyShare, getParam, getSection, globalText,
     guestLoginsAccepted, isAuditEnabled, normalizeKey, parseBool, parseConf,
     readShares, removeSection, serializeConf, setAuditEnabled, setGlobalText,
-    setParam, writeShare, type Share,
+    renameSection, setParam, writeShare, type Share,
 } from "../src/samba/conf";
+import { fcontextPattern, isProtectedPath, normalizePath } from "../src/samba/paths";
 
 const SAMPLE = `#
 # A hand written smb.conf
@@ -422,4 +423,84 @@ test("guest mapping is recognised however it is spelled", () => {
     const conf = parseConf("[global]\n\tworkgroup = X\n");
     acceptGuestLogins(conf);
     assert.equal(guestLoginsAccepted(conf), true);
+});
+
+/* --- Folders this page refuses to take over ---------------------------- */
+
+/* Setting a share folder's permissions closes it to everyone but the
+   share's users, and that is not recursive but traversal is: doing it to /
+   takes every path on the machine away from every non-root process. */
+
+test("paths are collapsed to one form before being judged", () => {
+    assert.equal(normalizePath("/srv//media/"), "/srv/media");
+    assert.equal(normalizePath("/srv/./media"), "/srv/media");
+    assert.equal(normalizePath("/srv/samba/../media"), "/srv/media");
+    assert.equal(normalizePath("///"), "/");
+    /* Nothing usable collapses to the root, which is refused, and
+       refusing is the right way to be wrong here. */
+    assert.equal(normalizePath(""), "/");
+});
+
+test("the filesystem root is refused", () => {
+    assert.equal(isProtectedPath("/"), true);
+    assert.equal(isProtectedPath("//"), true);
+    assert.equal(isProtectedPath("  /  "), true);
+    /* A path that walks its way back up to the root is still the root. */
+    assert.equal(isProtectedPath("/srv/.."), true);
+    assert.equal(isProtectedPath("/usr/local/../.."), true);
+});
+
+test("the directories the system needs are refused", () => {
+    for (const path of ["/etc", "/home", "/usr", "/var", "/tmp", "/boot", "/root",
+        "/proc", "/sys", "/dev", "/srv", "/mnt", "/opt",
+        "/usr/local", "/var/log", "/var/tmp"])
+        assert.equal(isProtectedPath(path), true, path);
+
+    /* Trailing slashes must not be a way around it. */
+    assert.equal(isProtectedPath("/home/"), true);
+    assert.equal(isProtectedPath("/usr/local/"), true);
+});
+
+test("an ordinary share folder is allowed", () => {
+    /* Only the shared directory itself is ever modified, so there is no
+       reason to refuse somewhere inside a system directory. */
+    for (const path of ["/srv/media", "/srv/samba/documents", "/home/alice",
+        "/var/www/files", "/usr/local/share/files", "/mnt/usb",
+        "/media/pi/BACKUP"])
+        assert.equal(isProtectedPath(path), false, path);
+
+    /* A dedicated disk mounted at the top level is an ordinary way to set
+       up a file server, so depth alone cannot be the rule. */
+    for (const path of ["/data", "/storage", "/tank", "/pool/share"])
+        assert.equal(isProtectedPath(path), false, path);
+});
+
+test("the semanage pattern escapes the path's regex metacharacters", () => {
+    /* Folder names with parentheses or dots are ordinary, and a wrong
+       fcontext rule is permanent and re-applied at every relabel. */
+    assert.equal(fcontextPattern("/srv/media (public)"),
+                 "/srv/media \\(public\\)(/.*)?");
+    assert.equal(fcontextPattern("/srv/v2.0+data"),
+                 "/srv/v2\\.0\\+data(/.*)?");
+    assert.equal(fcontextPattern("/srv/plain/"), "/srv/plain(/.*)?");
+    /* The path that would have matched everything under /srv matches
+       only the literal folder of that name. */
+    assert.equal(fcontextPattern("/srv/.*"), "/srv/\\.\\*(/.*)?");
+});
+
+/* The model writes names and values into the file verbatim, one line
+   each, so it must refuse text that would spill into a second line or
+   close a section header early. */
+test("the model refuses config injection through values and names", () => {
+    const conf = parseConf("[a]\n\tpath = /srv\n");
+    const section = getSection(conf, "a")!;
+
+    assert.throws(() => setParam(section, "comment", "x\n[evil]"), /line break/);
+    assert.throws(() => setParam(section, "comment\nvalid users = eve", "x"), /line break/);
+    assert.throws(() => addSection(conf, "a]\nvalid users = eve"), /line break|\]/);
+    assert.throws(() => addSection(conf, "a] b"), /\]/);
+    assert.throws(() => renameSection(section, "b]c"), /\]/);
+
+    /* Nothing was half-applied along the way. */
+    assert.equal(serializeConf(conf), "[a]\n\tpath = /srv\n");
 });

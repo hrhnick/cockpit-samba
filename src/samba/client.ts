@@ -22,6 +22,7 @@ import cockpit from "cockpit";
 import { fsinfo } from "cockpit/fsinfo";
 
 import { serializeConf, type SambaConf } from "./conf";
+import { fcontextPattern, isProtectedPath, normalizePath } from "./paths";
 
 const _ = cockpit.gettext;
 
@@ -334,9 +335,17 @@ export async function getConnections(): Promise<Connection[]> {
 }
 
 /* Close every session a client has open. smbd has no way to drop one
-   session and leave that client's others alone, so this is by address:
-   the same machine's other connections go too. */
+ * session and leave that client's others alone, so this is by address:
+ * the same machine's other connections go too.
+ *
+ * The address is the one thing on this page that a remote client has a
+ * hand in — it arrives through smbstatus — so it is checked against the
+ * shape of an actual address before being put on a root command line,
+ * rather than trusting that output to be well behaved.
+ */
 export async function disconnectClient(address: string): Promise<void> {
+    if (!/^[0-9a-fA-F.:]+$/.test(address) || address.startsWith("-"))
+        throw new Error(cockpit.format(_("$0 is not a network address."), address));
     await run(["smbcontrol", "smbd", "kill-client-ip", address]);
 }
 
@@ -511,7 +520,7 @@ export async function checkPath(path: string): Promise<PathState> {
 }
 
 export async function createDirectory(path: string): Promise<void> {
-    await run(["mkdir", "-p", path]);
+    await run(["mkdir", "-p", "--", path]);
 }
 
 export interface DiskUsage {
@@ -526,7 +535,7 @@ export interface DiskUsage {
  * name cannot wrap and shift the columns; -B1 asks for bytes.
  */
 export async function diskUsage(path: string): Promise<DiskUsage | null> {
-    const out = await runParsed(["df", "-B1", "-P", path]).catch(() => "");
+    const out = await runParsed(["df", "-B1", "-P", "--", path]).catch(() => "");
     const lines = out.trim().split("\n");
     if (lines.length < 2)
         return null;
@@ -574,21 +583,43 @@ export function permissionPlan(principals: string[]): PermissionPlan {
     return { kind: "acl", users, groups };
 }
 
+/* Where a path really leads. chown and chmod follow symlinks, so a share
+   at /srv/data pointing at / has to be judged as /, not as /srv/data. */
+async function realPath(path: string): Promise<string> {
+    const out = await runParsed(["readlink", "-f", "--", path]).catch(() => "");
+    return out.trim() || normalizePath(path);
+}
+
 export async function applyPermissions(path: string, principals: string[]): Promise<boolean> {
     const plan = permissionPlan(principals);
 
     if (plan.kind === "none")
         return false;
 
-    /* setgid in the group cases keeps files created inside the share in
+    /* The last line of defence rather than the first: the dialogs do not
+       offer this for a system directory. See samba/paths.ts for what goes
+       wrong if it happens anyway. */
+    const target = await realPath(path);
+    if (isProtectedPath(target))
+        throw new Error(cockpit.format(
+            _("Refusing to change the permissions of $0, which the system needs as it is."), target));
+
+    /* "--" throughout: names and paths here come from smb.conf and the
+       dialogs, and GNU tools accept options anywhere on the command line,
+       so an argument starting with "-" would otherwise be read as one.
+       Today every such parse fails outright, but option injection into
+       chown or chmod is not something to leave to how getopt happens to
+       behave.
+
+       setgid in the group cases keeps files created inside the share in
        the share's group, so members keep seeing each other's files. */
     if (plan.kind === "ownership") {
-        await run(["chown", `${plan.owner}:${plan.group}`, path]);
-        await run(["chmod", plan.group ? "2770" : "0700", path]);
+        await run(["chown", "--", `${plan.owner}:${plan.group}`, path]);
+        await run(["chmod", "--", plan.group ? "2770" : "0700", path]);
         return false;
     }
 
-    await run(["chmod", "770", path]);
+    await run(["chmod", "--", "770", path]);
 
     /* Default (d:) entries as well as access entries, so files created
        inside the share inherit them. */
@@ -598,7 +629,7 @@ export async function applyPermissions(path: string, principals: string[]): Prom
     ];
 
     try {
-        await run(["setfacl", "-m", acl.join(","), path]);
+        await run(["setfacl", "-m", acl.join(","), "--", path]);
         return false;
     } catch {
         return true;
@@ -638,7 +669,7 @@ export async function checkSELinuxContext(path: string): Promise<boolean> {
         return true;
 
     try {
-        const out = await runParsed(["ls", "-Zd", path]);
+        const out = await runParsed(["ls", "-Zd", "--", path]);
         /* A leading "?" means no context is recorded, e.g. on a
            filesystem that does not support labels. */
         if (out.trim().startsWith("?"))
@@ -651,25 +682,35 @@ export async function checkSELinuxContext(path: string): Promise<boolean> {
 }
 
 export async function fixSELinuxContext(path: string): Promise<void> {
-    /* Trailing slashes would make the semanage regex malformed. A path
-       made only of slashes is the root directory, since the kernel
-       collapses them. */
-    const clean = path.trim().replace(/\/+$/, "") || "/";
-    if (clean === "/")
-        throw new Error(_("Refusing to change the SELinux context of the filesystem root."));
+    /* Trailing slashes would make the semanage regex malformed, and
+       restorecon follows symlinks the same way chown does. */
+    const clean = await realPath(path);
+
+    /* This one relabels the whole tree and records a permanent rule, so
+       aiming it at a system directory does more damage than the
+       permission change does. */
+    if (isProtectedPath(clean))
+        throw new Error(cockpit.format(
+            _("Refusing to change the SELinux context of $0, which the system needs as it is."), clean));
+
+    /* semanage takes a regular expression, and the path has to be escaped
+       into one: folder names contain regex metacharacters often enough
+       ("/srv/media (public)"), and a wrong rule here is permanent and
+       re-applied at every relabel. */
+    const pattern = fcontextPattern(clean);
 
     try {
         /* Register a persistent rule first so the label survives a
            filesystem relabel, which would silently undo a bare chcon.
            -a fails when a rule for the path already exists, so fall
            back to modifying it. */
-        await run(["semanage", "fcontext", "-a", "-t", "samba_share_t", `${clean}(/.*)?`])
-                .catch(() => run(["semanage", "fcontext", "-m", "-t", "samba_share_t", `${clean}(/.*)?`]));
-        await run(["restorecon", "-R", clean]);
+        await run(["semanage", "fcontext", "-a", "-t", "samba_share_t", pattern])
+                .catch(() => run(["semanage", "fcontext", "-m", "-t", "samba_share_t", pattern]));
+        await run(["restorecon", "-R", "--", clean]);
     } catch {
         /* policycoreutils-python-utils may not be installed. chcon
            relabels now but does not survive a relabel. */
-        await run(["chcon", "-R", "-t", "samba_share_t", clean]);
+        await run(["chcon", "-R", "-t", "samba_share_t", "--", clean]);
     }
 }
 

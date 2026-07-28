@@ -71,6 +71,9 @@ const CASES: [string, React.ReactNode, string][] = [
     ["fix permissions, ownership", <FixPermissionsDialog share={share} onDone={nothing} />, "fix-permissions-dialog"],
     ["fix permissions, ACL", <FixPermissionsDialog share={sharedShare} onDone={nothing} />, "fix-permissions-dialog"],
     ["fix permissions, nobody named", <FixPermissionsDialog share={{ ...share, validUsers: [] }} onDone={nothing} />, "fix-permissions-dialog"],
+    /* A share pointing at a system directory must explain itself rather
+       than offer to close / to everyone but one user. */
+    ["fix permissions, filesystem root", <FixPermissionsDialog share={{ ...share, path: "/" }} onDone={nothing} />, "belongs to the operating system"],
     ["fix selinux", <FixSELinuxDialog share={share} onDone={nothing} />, "fix-selinux-dialog"],
     ["disconnect client", <DisconnectClientDialog connection={connection} onDone={nothing} />, "192.168.1.20"],
     ["manage access", <ManageAccessDialog canEdit />, "manage-access-dialog"],

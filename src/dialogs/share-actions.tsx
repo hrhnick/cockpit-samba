@@ -8,11 +8,13 @@ import React, { useState } from "react";
 import cockpit from "cockpit";
 import { fmt_to_fragments } from "utils";
 
+import { Alert } from "@patternfly/react-core/dist/esm/components/Alert/index.js";
 import { Checkbox } from "@patternfly/react-core/dist/esm/components/Checkbox/index.js";
 
 import { ConfirmDialog, DialogFrame } from "../components/dialog";
 import { useAlerts, type AlertRequest } from "../components/alerts";
 import * as client from "../samba/client";
+import { isProtectedPath, normalizePath } from "../samba/paths";
 import { removeSection, type SambaConf, type Share } from "../samba/conf";
 
 const _ = cockpit.gettext;
@@ -69,6 +71,18 @@ export const DeleteShareDialog = ({ share, applyConf }: {
     </ConfirmDialog>
 );
 
+/* A folder this page will not take over. Explaining why is worth more
+   than hiding the action: the reason it is refused is also the reason the
+   share should be pointing somewhere else. */
+export const SystemFolderAlert = ({ path }: { path: string }) => (
+    <Alert isInline variant="warning" className="pf-v6-u-mt-md"
+           title={_("This folder belongs to the operating system")}>
+        {fmt_to_fragments(
+            _("Giving $0 to this share's users means closing it to everyone else, and everything on the machine underneath it goes with it. Point the share at a folder inside it instead."),
+            <code>{normalizePath(path)}</code>)}
+    </Alert>
+);
+
 /* A share whose directory does not exist looks fine in the configuration
    but fails for every client that opens it. */
 export const CreateDirectoryDialog = ({ share, onDone }: {
@@ -78,11 +92,12 @@ export const CreateDirectoryDialog = ({ share, onDone }: {
     const alert = useAlerts();
     const [applyAcls, setApplyAcls] = useState(true);
     const principals = sharePrincipals(share);
+    const isSystemFolder = isProtectedPath(share.path);
 
     async function onApply() {
         await client.createDirectory(share.path);
 
-        if (applyAcls && principals.length > 0)
+        if (applyAcls && principals.length > 0 && !isSystemFolder)
             await grantAccess(share, true, alert);
 
         if (await client.isSELinuxEnabled())
@@ -102,7 +117,8 @@ export const CreateDirectoryDialog = ({ share, onDone }: {
                     _("The folder $0 does not exist, so clients cannot open this share."),
                     <code>{share.path}</code>)}
             </p>
-            {principals.length > 0 && (
+            {isSystemFolder && <SystemFolderAlert path={share.path} />}
+            {!isSystemFolder && principals.length > 0 && (
                 <Checkbox id="create-directory-acls"
                           className="pf-v6-u-mt-md"
                           label={_("Give the share's users access to it")}
@@ -144,6 +160,7 @@ export const FixPermissionsDialog = ({ share, onDone }: {
     const alert = useAlerts();
     const principals = sharePrincipals(share);
     const plan = client.permissionPlan(principals);
+    const isSystemFolder = isProtectedPath(share.path);
 
     async function onApply() {
         await grantAccess(share, false, alert);
@@ -155,7 +172,7 @@ export const FixPermissionsDialog = ({ share, onDone }: {
                      variant="small"
                      title={_("Fix folder permissions")}
                      actionLabel={_("Apply permissions")}
-                     isActionDisabled={plan.kind === "none"}
+                     isActionDisabled={plan.kind === "none" || isSystemFolder}
                      onApply={onApply}>
             <p>
                 {fmt_to_fragments(
@@ -163,17 +180,19 @@ export const FixPermissionsDialog = ({ share, onDone }: {
                     <code>{share.path}</code>)}
             </p>
 
-            {plan.kind === "none" && (
+            {isSystemFolder && <SystemFolderAlert path={share.path} />}
+
+            {!isSystemFolder && plan.kind === "none" && (
                 <p className="pf-v6-u-mt-sm">
                     {_("This share names no users, so there is nothing to grant. Every account with a Samba password may connect, and the folder's own permissions decide what they can do.")}
                 </p>
             )}
 
-            {plan.kind === "ownership" && (
+            {!isSystemFolder && plan.kind === "ownership" && (
                 <p className="pf-v6-u-mt-sm">{ownershipSummary(plan.owner, plan.group)}</p>
             )}
 
-            {plan.kind === "acl" && (
+            {!isSystemFolder && plan.kind === "acl" && (
                 <p className="pf-v6-u-mt-sm">
                     {cockpit.format(
                         _("$0 will each be given access through a filesystem ACL, which new files inside the folder inherit."),
