@@ -23,6 +23,14 @@ const require = createRequire(import.meta.url);
 try {
     require.resolve('jsdom');
 } catch {
+    /* Skipping keeps `npm test` useful in a plain checkout, but a skip
+       that CI treats as a pass is a test which cannot fail — and this
+       suite exists because of a bug that shipped past exactly that. */
+    if (process.env.CI) {
+        console.error('jsdom is missing, so no dialog was actually mounted. ' +
+                      'Refusing to report success in CI.');
+        process.exit(1);
+    }
     console.log('# skipped: jsdom is not installed (npm install --no-save jsdom)');
     process.exit(0);
 }

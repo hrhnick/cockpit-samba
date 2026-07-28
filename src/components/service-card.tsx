@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 import cockpit from "cockpit";
 import { useDialogs } from "dialogs";
@@ -86,6 +86,21 @@ export const ServiceCard = ({
 
     const discovery = useDiscoveryService();
     const [discoveryBusy, setDiscoveryBusy] = useState(false);
+    /* The package that could be installed: null while unknown, "" once we
+       know no repository has one. Asked for only when the card is open and
+       the daemon is missing, so an ordinary page load costs nothing. */
+    const [discoveryPackage, setDiscoveryPackage] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (isExpanded && discovery.installed === false && discoveryPackage === null)
+            client.findDiscoveryPackage().then(name => setDiscoveryPackage(name ?? ""),
+                                               () => setDiscoveryPackage(""));
+    }, [isExpanded, discovery.installed, discoveryPackage]);
+
+    /* Not packaged by every distribution — Raspberry Pi OS and older
+       Debian have neither name — so the switch says so rather than
+       offering an installation that cannot happen. */
+    const discoveryUnavailable = discovery.installed === false && discoveryPackage === "";
 
     /* Turn the WS-Discovery responder on or off, installing it first if
        the machine does not have it. Installation adds a unit the page has
@@ -95,9 +110,9 @@ export const ServiceCard = ({
         try {
             if (discovery.unit) {
                 await client.setUnitRunning(discovery.unit, on);
-            } else {
-                await install_dialog("wsdd");
-                await client.setUnitRunning("wsdd.service", true).catch(() => null);
+            } else if (discoveryPackage) {
+                await install_dialog(discoveryPackage);
+                await client.setUnitRunning(`${discoveryPackage}.service`, true).catch(() => null);
                 window.location.reload();
             }
         } catch (exception) {
@@ -112,6 +127,14 @@ export const ServiceCard = ({
         } finally {
             setDiscoveryBusy(false);
         }
+    }
+
+    function discoveryHelp(): string {
+        if (discoveryUnavailable)
+            return _("Windows computers find servers with WS-Discovery, which Samba does not answer. None of this machine's software repositories carry the wsdd service that answers it, so the share has to be opened by name from Windows, or wsdd installed by hand.");
+        if (discovery.installed === false)
+            return _("Lets Windows computers find this server in their Network view. Turning it on installs the wsdd service.");
+        return _("Lets Windows computers find this server in their Network view.");
     }
 
     /* Report a failed service action, which otherwise leaves the button
@@ -289,13 +312,10 @@ export const ServiceCard = ({
                                     <Switch id="samba-discovery"
                                             aria-label={_("Windows discovery")}
                                             isChecked={discovery.installed === true && discovery.running}
-                                            isDisabled={!canEdit || discoveryBusy || discovery.installed === null}
+                                            isDisabled={!canEdit || discoveryBusy ||
+                                                discovery.installed === null || discoveryUnavailable}
                                             onChange={(_event, checked) => setDiscovery(checked)} />
-                                    <span className="samba-subtle">
-                                        {discovery.installed === false
-                                            ? _("Lets Windows computers find this server in their Network view. Turning it on installs wsdd.")
-                                            : _("Lets Windows computers find this server in their Network view.")}
-                                    </span>
+                                    <span className="samba-subtle">{discoveryHelp()}</span>
                                 </Flex>
                             </DescriptionListDescription>
                         </DescriptionListGroup>
