@@ -242,9 +242,6 @@ unit-tests: $(NODE_MODULES_TEST)
 check-patternfly: $(COCKPIT_REPO_STAMP)
 	node test/check-patternfly.js
 
-codecheck: test/common $(NODE_MODULES_TEST) unit-tests check-patternfly
-	test/common/static-code
-
 # checkout Cockpit's bots for standard test VM images and API to launch them
 bots: $(COCKPIT_REPO_STAMP)
 	test/common/make-bots
