@@ -27,8 +27,14 @@ jobs:
       # package.json asks for, which is what the release workflow's deb job
       # builds with too.
 
-      # Fetches pkg/lib from the pinned Cockpit commit, installs
-      # node_modules, and builds into dist/.
+      # From the committed lockfile, so the checks run against the versions
+      # the repo pins. Left to itself, the Makefile deletes the lockfile and
+      # installs whatever npm serves that day; touching the lockfile
+      # afterwards keeps its rule from doing exactly that.
+      - name: Install pinned dependencies
+        run: npm ci && touch package-lock.json
+
+      # Fetches pkg/lib from the pinned Cockpit commit and builds into dist/.
       - name: Build
         run: make
 

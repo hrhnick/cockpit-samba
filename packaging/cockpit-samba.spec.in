@@ -37,6 +37,11 @@ Requires: cockpit-bridge
 # weak dependency: the module is useful on a machine that does not have a
 # file server yet, and pointless on one that never will.
 Recommends: samba
+# setfacl, which sharing a folder with several users needs
+Recommends: acl
+# answers the WS-Discovery queries that make the server visible in
+# Windows' Network view; the page offers to install it
+Suggests: wsdd
 
 %{NPM_PROVIDES}
 

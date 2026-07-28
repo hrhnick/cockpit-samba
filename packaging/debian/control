@@ -15,8 +15,12 @@ Depends: ${misc:Depends},
          cockpit-bridge,
 # The page offers to install Samba itself when it is missing, so this is a
 # weak dependency: the module is useful on a machine that does not have a
-# file server yet, and pointless on one that never will.
-Recommends: samba
+# file server yet, and pointless on one that never will. acl provides
+# setfacl, which sharing a folder with several users needs; wsdd is what
+# makes the server visible in Windows' Network view, and the page offers
+# to install it too.
+Recommends: samba, acl
+Suggests: wsdd
 Description: Cockpit module for managing Samba file shares
  A Cockpit page for managing Samba file shares: create and edit shares, give
  local accounts access to them, watch who is connected, and keep the server
