@@ -112,10 +112,14 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.tag || github.ref }}
 
+      # build-essential is an implicit build dependency of every Debian source
+      # package, so dpkg-checkbuilddeps refuses to build without it even though
+      # nothing here is compiled.
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends debhelper fakeroot gettext
+          sudo apt-get install -y --no-install-recommends \
+              build-essential debhelper fakeroot gettext
 
       - name: Workaround for https://github.com/actions/checkout/pull/697
         run: |
