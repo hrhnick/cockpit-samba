@@ -167,7 +167,7 @@ export const ServiceCard = ({
             { title: connection.username || <span className="samba-subtle">{_("Guest")}</span> },
             {
                 title: (
-                    <Flex spaceItems={{ default: "spaceItemsXs" }}>
+                    <Flex spaceItems={{ default: "spaceItemsSm" }}>
                         {connection.shares.map(share => <Label key={share} isCompact>{share}</Label>)}
                     </Flex>
                 )

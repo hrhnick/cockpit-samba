@@ -182,7 +182,7 @@ export const SharesCard = ({
         );
 
         const access = (
-            <Flex spaceItems={{ default: "spaceItemsXs" }}>
+            <Flex spaceItems={{ default: "spaceItemsSm" }}>
                 <Label color={share.readOnly ? "orange" : "blue"} isCompact>
                     {share.readOnly ? _("Read only") : _("Read and write")}
                 </Label>
@@ -222,7 +222,7 @@ export const SharesCard = ({
                                 {share.validUsers.length === 0
                                     ? _("Every user with a Samba password")
                                     : (
-                                        <Flex spaceItems={{ default: "spaceItemsXs" }}>
+                                        <Flex spaceItems={{ default: "spaceItemsSm" }}>
                                             {share.validUsers.map(user => (
                                                 <Label key={user}
                                                        color={user.startsWith("@") ? "yellow" : "blue"}
