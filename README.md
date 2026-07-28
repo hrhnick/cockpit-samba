@@ -172,3 +172,9 @@ against the branch by hand before merging.
 
 There are no translations. `po/` is created by the Makefile when it is needed;
 adding a `.po` file there is all that is required to start one.
+
+Versions come from git tags and nowhere else. The tarball, the RPM and the deb
+take theirs from `git describe`, and `packaging/sync-version.py` — which the
+Makefile runs on every build — copies the newest tag into `package.json` and
+`package-lock.json`. So releasing is just tagging: build once afterwards and
+commit whatever the version bump touched.

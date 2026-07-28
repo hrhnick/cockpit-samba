@@ -1,6 +1,6 @@
 {
   "name": "samba",
-  "version": "2.0.1",
+  "version": "2.0.6",
   "description": "Samba file sharing manager for Cockpit",
   "type": "module",
   "main": "index.tsx",
