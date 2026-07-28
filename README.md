@@ -94,7 +94,9 @@ Reload the browser and the page appears under *Samba shares*.
 - Status, version and uptime; start, stop and restart; start on boot
 - Windows discovery: one switch installs and runs
   [wsdd](https://github.com/christgau/wsdd), without which the server never
-  appears in Windows' Network view
+  appears in Windows' Network view. Not every distribution packages it —
+  Raspberry Pi OS and older Debian carry neither `wsdd` nor `wsdd2` — and
+  where none is available the page says so instead of offering the switch
 - Notices a firewalld that is blocking SMB and offers to open it, and shows
   the warnings `testparm` has about the configuration
 - Who is connected, which shares they have open, and whether the connection is
