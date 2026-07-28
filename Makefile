@@ -247,12 +247,20 @@ check-patternfly: $(COCKPIT_REPO_STAMP)
 bots: $(COCKPIT_REPO_STAMP)
 	test/common/make-bots
 
+# package.json's version comes from the newest git tag rather than from
+# anyone remembering to bump it. Order-only (after the |) so that running
+# it cannot by itself make anything rebuild; the script writes nothing
+# when the version is already right.
+.PHONY: sync-version
+sync-version:
+	@packaging/sync-version.py
+
 # Install exactly what the committed package-lock.json pins, so every
 # checkout, CI run and release builds from the same dependency tree. To
 # update dependencies, edit package.json, run `npm install`, and commit
 # the changed lockfile with it.
-$(NODE_MODULES_TEST): package.json package-lock.json
+$(NODE_MODULES_TEST): package.json package-lock.json | sync-version
 	# unset NODE_ENV, skips devDependencies otherwise; this often hangs, so try a few times
 	for _ in `seq 3`; do timeout 10m env -u NODE_ENV npm ci && exit 0; done; exit 1
 
-.PHONY: all clean install devel-install devel-uninstall print-version dist node-cache rpm prepare-check check check-patternfly vm print-vm
+.PHONY: all clean install sync-version devel-install devel-uninstall print-version dist node-cache rpm prepare-check check check-patternfly vm print-vm
