@@ -9,16 +9,21 @@ import cockpit from "cockpit";
 import { useInit } from "hooks";
 import { FormHelper } from "cockpit-components-form-helper";
 import { MultiTypeaheadSelect } from "cockpit-components-multi-typeahead-select";
+import { TypeaheadSelect } from "cockpit-components-typeahead-select";
 
 import { Alert } from "@patternfly/react-core/dist/esm/components/Alert/index.js";
 import { Checkbox } from "@patternfly/react-core/dist/esm/components/Checkbox/index.js";
+import {
+    ExpandableSection,
+} from "@patternfly/react-core/dist/esm/components/ExpandableSection/index.js";
 import { FormGroup, FormSection } from "@patternfly/react-core/dist/esm/components/Form/index.js";
 import { TextInput } from "@patternfly/react-core/dist/esm/components/TextInput/index.js";
 
 import { DialogFrame } from "../components/dialog";
 import { useAlerts } from "../components/alerts";
+import { grantAccess, sharePrincipals } from "./share-actions";
 import * as client from "../samba/client";
-import { type Share, type SambaConf, writeShare } from "../samba/conf";
+import { emptyShare, type Share, type SambaConf, writeShare } from "../samba/conf";
 
 const _ = cockpit.gettext;
 
@@ -27,55 +32,40 @@ export interface ShareDialogProps {
     share: Share | null;
     /* Every share, for the name collision check. */
     shares: Share[];
+    /* Whether the server maps unknown users to the guest account at all.
+       Without it a share can allow guests and still turn them away. */
+    guestLoginsAllowed: boolean;
     applyConf: (mutate: (conf: SambaConf) => void) => Promise<void>;
     /* Re-check directory and SELinux state after the dialog changed it. */
     onPathsChanged: () => void;
 }
 
-interface FormState {
-    name: string;
-    path: string;
-    comment: string;
-    readOnly: boolean;
-    browseable: boolean;
-    guestOk: boolean;
-    validUsers: string[];
-}
+/* Samba writes permissions as an octal mask, the same three or four
+   digits as chmod. */
+const MASK_RE = /^[0-7]{3,4}$/;
 
-const EMPTY: FormState = {
-    name: "",
-    path: "",
-    comment: "",
-    readOnly: false,
-    browseable: true,
-    guestOk: false,
-    validUsers: [],
-};
-
-export const ShareDialog = ({ share, shares, applyConf, onPathsChanged }: ShareDialogProps) => {
+export const ShareDialog = ({
+    share, shares, guestLoginsAllowed, applyConf, onPathsChanged,
+}: ShareDialogProps) => {
     const alert = useAlerts();
     const isEdit = share !== null;
 
-    const [form, setForm] = useState<FormState>(share
-        ? {
-            name: share.name,
-            path: share.path,
-            comment: share.comment,
-            readOnly: share.readOnly,
-            browseable: share.browseable,
-            guestOk: share.guestOk,
-            validUsers: share.validUsers,
-        }
-        : EMPTY);
+    const [form, setForm] = useState<Share>(share ?? emptyShare());
 
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [typed, setTyped] = useState("");
+    const [writerTyped, setWriterTyped] = useState("");
     /* undefined until the path has been checked at least once. */
     const [pathState, setPathState] = useState<client.PathState | undefined>();
     const [createFolder, setCreateFolder] = useState(true);
     const [applyAcls, setApplyAcls] = useState(true);
+    /* Off by default when editing: the folder may have been given
+       permissions by hand that the share's user list knows nothing about,
+       and taking them over uninvited would be a surprise. */
+    const [fixPermissions, setFixPermissions] = useState(false);
+    const [isAdvancedOpen, setAdvancedOpen] = useState(false);
 
-    const update = (fields: Partial<FormState>) => setForm(current => ({ ...current, ...fields }));
+    const update = (fields: Partial<Share>) => setForm(current => ({ ...current, ...fields }));
 
     useInit(() => {
         client.listUserGroupSuggestions().then(setSuggestions, () => setSuggestions([]));
@@ -136,54 +126,72 @@ export const ShareDialog = ({ share, shares, applyConf, onPathsChanged }: ShareD
         return "";
     })();
 
+    const maskError = (value: string) =>
+        (!value.trim() || MASK_RE.test(value.trim()) ? "" : _("Enter three or four digits, as for chmod."));
+    const createMaskError = maskError(form.createMask);
+    const directoryMaskError = maskError(form.directoryMask);
+
     const isMissing = needsPath && pathState === "missing";
-    const isValid = !!name && !nameError && (!needsPath || (!!path && !pathError));
+    const folderExists = needsPath && pathState === "ok";
+    const isValid = !!name && !nameError && !createMaskError && !directoryMaskError &&
+        (!needsPath || (!!path && !pathError));
 
     /* Chips for the users and groups already on the share, the system's
        suggestions, and whatever is being typed, so an account Samba knows
        about but this machine does not can still be entered. */
-    const userOptions = (() => {
-        const values = new Set([...form.validUsers, ...suggestions]);
-        if (typed.trim())
-            values.add(typed.trim());
+    const principalOptions = (selected: string[], typing: string) => {
+        const values = new Set([...selected, ...suggestions]);
+        if (typing.trim())
+            values.add(typing.trim());
         return [...values].map(value => ({
             value,
             content: value,
             /* Groups yellow and users blue, as on the Accounts page. */
             color: value.startsWith("@") ? "yellow" as const : "blue" as const,
         }));
+    };
+
+    /* force group takes a group name without the @ that smb.conf's user
+       lists use to mark one. */
+    const groupOptions = (() => {
+        const names = suggestions.filter(s => s.startsWith("@")).map(s => s.slice(1));
+        if (form.forceGroup && !names.includes(form.forceGroup))
+            names.unshift(form.forceGroup);
+        return names.map(value => ({ value, content: value }));
     })();
 
+    const nextShare = (): Share => ({
+        ...form,
+        name,
+        path,
+        comment: form.comment.trim(),
+        forceGroup: form.forceGroup.trim(),
+        createMask: form.createMask.trim(),
+        directoryMask: form.directoryMask.trim(),
+        hostsAllow: form.hostsAllow.trim(),
+        hostsDeny: form.hostsDeny.trim(),
+        isSpecial: share?.isSpecial ?? false,
+    });
+
     async function onApply() {
+        const next = nextShare();
+        const hasPrincipals = sharePrincipals(next).length > 0;
+
         if (isMissing && createFolder) {
             await client.createDirectory(path);
 
-            if (applyAcls && form.validUsers.length > 0) {
-                const aclUnavailable = await client.applyPermissions(path, form.validUsers);
-                if (aclUnavailable)
-                    alert({
-                        variant: "warning",
-                        title: _("The folder was created, but permissions for every user could not be set."),
-                        detail: _("Sharing with more than one user or group needs ACLs, and setfacl is not installed. Install the acl package, then use Edit share to apply the permissions."),
-                    });
-            }
+            if (applyAcls && hasPrincipals)
+                await grantAccess(next, true, alert);
 
             /* A new directory under /srv or /home gets a label that
                SELinux will not let Samba read. */
             if (await client.isSELinuxEnabled())
                 await client.fixSELinuxContext(path).catch(() => null);
+        } else if (folderExists && fixPermissions && hasPrincipals) {
+            await grantAccess(next, false, alert);
         }
 
-        await applyConf(conf => writeShare(conf, {
-            name,
-            path,
-            comment: form.comment.trim(),
-            readOnly: form.readOnly,
-            browseable: form.browseable,
-            guestOk: form.guestOk,
-            validUsers: form.validUsers,
-            isSpecial: share?.isSpecial ?? false,
-        }, share?.name));
+        await applyConf(conf => writeShare(conf, next, share?.name));
 
         onPathsChanged();
     }
@@ -226,7 +234,7 @@ export const ShareDialog = ({ share, shares, applyConf, onPathsChanged }: ShareD
 
             <FormGroup label={_("Access for")} fieldId="share-users">
                 <MultiTypeaheadSelect id="share-users"
-                                      options={userOptions}
+                                      options={principalOptions(form.validUsers, typed)}
                                       selected={form.validUsers}
                                       placeholder={form.validUsers.length === 0 ? _("Everyone with an account") : ""}
                                       onAdd={value => update({ validUsers: [...form.validUsers, String(value)] })}
@@ -237,7 +245,12 @@ export const ShareDialog = ({ share, shares, applyConf, onPathsChanged }: ShareD
                             helperText={_("Leave empty to let every user with a Samba password connect.")} />
             </FormGroup>
 
-            <FormGroup label={_("Options")} role="group" fieldId="share-read-only" hasNoPaddingTop>
+            <FormGroup label={_("Options")} role="group" fieldId="share-available" hasNoPaddingTop>
+                <Checkbox id="share-available"
+                          label={_("Enabled")}
+                          description={_("When off, the share keeps its configuration but clients cannot connect to it.")}
+                          isChecked={form.available}
+                          onChange={(_event, checked) => update({ available: checked })} />
                 <Checkbox id="share-read-only"
                           label={_("Read only")}
                           description={_("Clients can open and copy files, but not change them.")}
@@ -250,7 +263,9 @@ export const ShareDialog = ({ share, shares, applyConf, onPathsChanged }: ShareD
                           onChange={(_event, checked) => update({ browseable: checked })} />
                 <Checkbox id="share-guest-ok"
                           label={_("Allow guests")}
-                          description={_("Anyone on the network can connect without a password.")}
+                          description={guestLoginsAllowed
+                              ? _("Anyone on the network can connect without a password.")
+                              : _("Anyone on the network can connect without a password. Saving will also set the server to accept guest logins, which it does not do by default.")}
                           isChecked={form.guestOk}
                           onChange={(_event, checked) => update({ guestOk: checked })} />
             </FormGroup>
@@ -264,7 +279,7 @@ export const ShareDialog = ({ share, shares, applyConf, onPathsChanged }: ShareD
                                   label={_("Create it now")}
                                   isChecked={createFolder}
                                   onChange={(_event, checked) => setCreateFolder(checked)} />
-                        {createFolder && form.validUsers.length > 0 && (
+                        {createFolder && sharePrincipals(form).length > 0 && (
                             <Checkbox id="share-apply-acls"
                                       label={_("Give the users above access to it")}
                                       isChecked={applyAcls}
@@ -276,6 +291,108 @@ export const ShareDialog = ({ share, shares, applyConf, onPathsChanged }: ShareD
                     </Alert>
                 </FormSection>
             )}
+
+            {/* Samba checks the folder's own permissions as well as the
+                share's user list, and changing the one does not change the
+                other. */}
+            {folderExists && sharePrincipals(form).length > 0 && (
+                <FormGroup label={_("Folder permissions")} role="group"
+                           fieldId="share-fix-permissions" hasNoPaddingTop>
+                    <Checkbox id="share-fix-permissions"
+                              label={_("Set the folder's permissions to match")}
+                              description={_("Gives the users above access to the folder itself. Without this the share's user list can allow someone the folder still keeps out.")}
+                              isChecked={fixPermissions}
+                              onChange={(_event, checked) => setFixPermissions(checked)} />
+                </FormGroup>
+            )}
+
+            <ExpandableSection toggleText={_("More options")}
+                               isExpanded={isAdvancedOpen}
+                               onToggle={(_event, expanded) => setAdvancedOpen(expanded)}>
+                <FormGroup label={_("May write")} fieldId="share-write-list">
+                    <MultiTypeaheadSelect id="share-write-list"
+                                          options={principalOptions(form.writeList, writerTyped)}
+                                          selected={form.writeList}
+                                          placeholder={form.writeList.length === 0 ? _("Nobody in particular") : ""}
+                                          onAdd={value => update({ writeList: [...form.writeList, String(value)] })}
+                                          onRemove={value => update({ writeList: form.writeList.filter(u => u !== value) })}
+                                          onInputChange={setWriterTyped}
+                                          noOptionsFoundMessage={() => _("Type a user name, or @ and a group name")} />
+                    <FormHelper fieldId="share-write-list"
+                                helperText={_("These may change files even when the share is read only.")} />
+                </FormGroup>
+
+                <FormGroup label={_("Allowed clients")} fieldId="share-hosts-allow">
+                    <TextInput id="share-hosts-allow"
+                               value={form.hostsAllow}
+                               placeholder="192.168.1. 10.0.0.0/8"
+                               onChange={(_event, value) => update({ hostsAllow: value })} />
+                    <FormHelper fieldId="share-hosts-allow"
+                                helperText={_("Addresses, names or subnets that may connect. Leave empty to allow any.")} />
+                </FormGroup>
+
+                <FormGroup label={_("Refused clients")} fieldId="share-hosts-deny">
+                    <TextInput id="share-hosts-deny"
+                               value={form.hostsDeny}
+                               onChange={(_event, value) => update({ hostsDeny: value })} />
+                    <FormHelper fieldId="share-hosts-deny"
+                                helperText={_("Checked after the allowed list, so it takes an address back out of it.")} />
+                </FormGroup>
+
+                <FormGroup label={_("New files belong to")} fieldId="share-force-group">
+                    <TypeaheadSelect id="share-force-group"
+                                     selectOptions={groupOptions}
+                                     selected={form.forceGroup || null}
+                                     selectedIsTrusted
+                                     isCreatable
+                                     placeholder={_("The user who created them")}
+                                     onSelect={(_event, value) => update({ forceGroup: String(value) })}
+                                     onClearSelection={() => update({ forceGroup: "" })}
+                                     createOptionMessage={value => cockpit.format(_("Use \"$0\""), value)}
+                                     noOptionsAvailableMessage={_("No groups found")} />
+                    <FormHelper fieldId="share-force-group"
+                                helperText={_("Puts everything clients create into one group, so the people sharing the folder can reach each other's files.")} />
+                </FormGroup>
+
+                <FormGroup label={_("New file permissions")} fieldId="share-create-mask">
+                    <TextInput id="share-create-mask"
+                               value={form.createMask}
+                               placeholder="0744"
+                               validated={createMaskError ? "error" : "default"}
+                               onChange={(_event, value) => update({ createMask: value })} />
+                    <FormHelper fieldId="share-create-mask"
+                                helperTextInvalid={createMaskError}
+                                helperText={_("The most a new file may be given, as an octal mask. 0664 lets the group write.")} />
+                </FormGroup>
+
+                <FormGroup label={_("New folder permissions")} fieldId="share-directory-mask">
+                    <TextInput id="share-directory-mask"
+                               value={form.directoryMask}
+                               placeholder="0755"
+                               validated={directoryMaskError ? "error" : "default"}
+                               onChange={(_event, value) => update({ directoryMask: value })} />
+                    <FormHelper fieldId="share-directory-mask"
+                                helperTextInvalid={directoryMaskError}
+                                helperText={_("The same, for folders. 0775 lets the group add files.")} />
+                </FormGroup>
+
+                <FormGroup label={_("Extras")} role="group" fieldId="share-recycle" hasNoPaddingTop>
+                    <Checkbox id="share-recycle"
+                              label={_("Recycle bin")}
+                              description={_("Files deleted over the network are moved to a .recycle folder in the share instead of being destroyed. Nothing empties it by itself.")}
+                              isChecked={form.recycleBin}
+                              onChange={(_event, checked) => update({ recycleBin: checked })} />
+                    <Checkbox id="share-time-machine"
+                              label={_("Time Machine backups")}
+                              description={_("Offers the share to macOS as a backup destination, and stores the file metadata macOS expects.")}
+                              isChecked={form.timeMachine}
+                              onChange={(_event, checked) => update({ timeMachine: checked })} />
+                    <FormHelper fieldId="share-time-machine"
+                                helperTextInvalid={form.timeMachine && form.readOnly
+                                    ? _("Time Machine has to write to the share, so turn Read only off.")
+                                    : ""} />
+                </FormGroup>
+            </ExpandableSection>
         </DialogFrame>
     );
 };

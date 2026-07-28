@@ -30,6 +30,7 @@ import { SyncAltIcon } from "@patternfly/react-icons";
 
 import { useAlerts } from "./alerts";
 import { GlobalSettingsDialog, BackupRestoreDialog } from "../dialogs/config-dialogs";
+import { DisconnectClientDialog } from "../dialogs/disconnect-dialog";
 import { LogsDialog } from "../dialogs/logs-dialog";
 import { ManageAccessDialog } from "../dialogs/manage-access-dialog";
 import { errorString, type Connection } from "../samba/client";
@@ -159,6 +160,7 @@ export const ServiceCard = ({
         { title: _("Connected since") },
         { title: _("Encryption") },
         { title: _("Signing") },
+        { title: "", props: { screenReaderText: _("Actions") } },
     ];
 
     const rows = connections.map(connection => ({
@@ -167,7 +169,7 @@ export const ServiceCard = ({
             { title: connection.username || <span className="samba-subtle">{_("Guest")}</span> },
             {
                 title: (
-                    <Flex spaceItems={{ default: "spaceItemsXs" }}>
+                    <Flex spaceItems={{ default: "spaceItemsSm" }}>
                         {connection.shares.map(share => <Label key={share} isCompact>{share}</Label>)}
                     </Flex>
                 )
@@ -176,6 +178,21 @@ export const ServiceCard = ({
             { title: connection.connectedAt ? timeformat.dateTime(connection.connectedAt) : "" },
             { title: connection.encryption || "-" },
             { title: connection.signing || "-" },
+            {
+                title: canEdit && connection.machine
+                    ? (
+                        <KebabDropdown dropdownItems={[
+                            <DropdownItem key="disconnect" isDanger
+                                          onClick={() => Dialogs.show(
+                                              <DisconnectClientDialog connection={connection}
+                                                                      onDone={refreshConnections} />)}>
+                                {_("Disconnect")}
+                            </DropdownItem>,
+                        ]} />
+                    )
+                    : null,
+                props: { className: "pf-v6-c-table__action" },
+            },
         ],
     }));
 

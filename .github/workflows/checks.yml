@@ -1,0 +1,50 @@
+# The checks that need nothing but a checkout: types, lint, the smb.conf
+# model, that every dialog mounts, and that the page builds. The browser
+# integration tests are not here because they need a test VM.
+name: checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # so a cockpit-lib-update pull request can be re-checked by hand after
+  # its PatternFly versions are corrected
+  workflow_dispatch:
+
+# A new push supersedes whatever was running for the same branch.
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v7
+
+      # No setup-node step: the runner image already ships a Node newer than
+      # package.json asks for, which is what the release workflow's deb job
+      # builds with too.
+
+      # Fetches pkg/lib from the pinned Cockpit commit, installs
+      # node_modules, and builds into dist/.
+      - name: Build
+        run: make
+
+      # Runs after the build, which is what fetches the Cockpit commit this
+      # compares against.
+      - name: Check PatternFly against pkg/lib
+        run: node test/check-patternfly.js
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: ESLint
+        run: npm run eslint
+
+      - name: Stylelint
+        run: npm run stylelint
+
+      - name: Unit and dialog tests
+        run: npm test

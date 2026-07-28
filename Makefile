@@ -50,9 +50,12 @@ $(COCKPIT_REPO_STAMP): Makefile
 # i18n
 #
 
+# There are no translations yet, so po/ holds nothing git can track and is
+# not there in a fresh checkout; every rule that writes into it makes it.
 LINGUAS=$(basename $(notdir $(wildcard po/*.po)))
 
 po/$(PACKAGE_NAME).js.pot:
+	mkdir -p po
 	xgettext --default-domain=$(PACKAGE_NAME) --output=- --language=C --keyword= \
 		--add-comments=Translators: \
 		--keyword=_:1,1t --keyword=_:1c,2,2t --keyword=C_:1c,2 \
@@ -64,18 +67,22 @@ po/$(PACKAGE_NAME).js.pot:
 		sed '/^#/ s/, c-format//' > $@
 
 po/$(PACKAGE_NAME).html.pot: $(NODE_MODULES_TEST) $(COCKPIT_REPO_STAMP)
+	mkdir -p po
 	pkg/lib/html2po -o $@ $$(find src -name '*.html')
 
 po/$(PACKAGE_NAME).manifest.pot: $(COCKPIT_REPO_STAMP)
+	mkdir -p po
 	pkg/lib/manifest2po -o $@ src/manifest.json
 
 po/$(PACKAGE_NAME).metainfo.pot: $(APPSTREAMFILE)
+	mkdir -p po
 	xgettext --default-domain=$(PACKAGE_NAME) --output=$@ $<
 
 po/$(PACKAGE_NAME).pot: po/$(PACKAGE_NAME).html.pot po/$(PACKAGE_NAME).js.pot po/$(PACKAGE_NAME).manifest.pot po/$(PACKAGE_NAME).metainfo.pot
 	msgcat --sort-output --output-file=$@ $^
 
 po/LINGUAS:
+	mkdir -p po
 	echo $(LINGUAS) | tr ' ' '\n' > $@
 
 #
@@ -230,7 +237,12 @@ check: prepare-check
 unit-tests: $(NODE_MODULES_TEST)
 	npm test
 
-codecheck: test/common $(NODE_MODULES_TEST) unit-tests
+# Our PatternFly has to match the one pkg/lib was built against; see the
+# script for why a mismatch is worth failing over.
+check-patternfly: $(COCKPIT_REPO_STAMP)
+	node test/check-patternfly.js
+
+codecheck: test/common $(NODE_MODULES_TEST) unit-tests check-patternfly
 	test/common/static-code
 
 # checkout Cockpit's bots for standard test VM images and API to launch them
@@ -244,4 +256,4 @@ $(NODE_MODULES_TEST): package.json
 	for _ in `seq 3`; do timeout 10m env -u NODE_ENV npm install --ignore-scripts && exit 0; done; exit 1
 	env -u NODE_ENV npm prune
 
-.PHONY: all clean install devel-install devel-uninstall print-version dist node-cache rpm prepare-check check vm print-vm
+.PHONY: all clean install devel-install devel-uninstall print-version dist node-cache rpm prepare-check check check-patternfly vm print-vm

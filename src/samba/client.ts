@@ -333,6 +333,13 @@ export async function getConnections(): Promise<Connection[]> {
     return parseConnectionsText().catch(() => []);
 }
 
+/* Close every session a client has open. smbd has no way to drop one
+   session and leave that client's others alone, so this is by address:
+   the same machine's other connections go too. */
+export async function disconnectClient(address: string): Promise<void> {
+    await run(["smbcontrol", "smbd", "kill-client-ip", address]);
+}
+
 /* --- Users ------------------------------------------------------------ */
 
 export interface SambaUser {
@@ -507,6 +514,32 @@ export async function createDirectory(path: string): Promise<void> {
     await run(["mkdir", "-p", path]);
 }
 
+export interface DiskUsage {
+    total: number;
+    available: number;
+}
+
+/* How much room the share has left. Null when it could not be
+ * determined, which the caller reports as nothing rather than as zero.
+ *
+ * -P is the POSIX single-line-per-filesystem format, so a long device
+ * name cannot wrap and shift the columns; -B1 asks for bytes.
+ */
+export async function diskUsage(path: string): Promise<DiskUsage | null> {
+    const out = await runParsed(["df", "-B1", "-P", path]).catch(() => "");
+    const lines = out.trim().split("\n");
+    if (lines.length < 2)
+        return null;
+
+    /* Matched from the right, because the device name in the first
+       column may itself contain spaces. */
+    const fields = /\s(\d+)\s+(\d+)\s+(\d+)\s+\d+%\s/.exec(lines[lines.length - 1]);
+    if (!fields)
+        return null;
+
+    return { total: parseInt(fields[1], 10), available: parseInt(fields[3], 10) };
+}
+
 /* Give the share's users access to the directory on the filesystem.
  * Samba enforces `valid users` on top of the ordinary Unix permissions,
  * so a share whose directory is only readable by root lets nobody in
@@ -515,30 +548,43 @@ export async function createDirectory(path: string): Promise<void> {
  * Returns true when per-user ACLs were wanted but setfacl was not
  * available, in which case access is limited to the owner and group.
  */
-export async function applyPermissions(path: string, validUsers: string[]): Promise<boolean> {
-    const users = validUsers.filter(u => !u.startsWith("@"));
-    const groups = validUsers.filter(u => u.startsWith("@")).map(g => g.slice(1))
+export type PermissionPlan =
+    /* Nobody in particular was named, so there is no permission to grant.
+       Widening the folder to everyone would hand it to every local account
+       as well, which is a good deal more than the share asked for. */
+    | { kind: "none" }
+    /* Ordinary ownership covers up to one user and one group, which is what
+       most shares are. Only beyond that are ACLs needed, and setfacl is not
+       installed by default on Debian and its derivatives — it comes from the
+       acl package — so it is worth avoiding when it buys nothing. */
+    | { kind: "ownership", owner: string, group: string }
+    | { kind: "acl", users: string[], groups: string[] };
+
+/* What applyPermissions would do, so that a dialog can say so before the
+   user agrees to it rather than after. */
+export function permissionPlan(principals: string[]): PermissionPlan {
+    const users = principals.filter(u => !u.startsWith("@"));
+    const groups = principals.filter(u => u.startsWith("@")).map(g => g.slice(1))
             .filter(Boolean);
 
-    if (users.length === 0 && groups.length === 0) {
-        /* No restriction in smb.conf, so do not impose one here either. */
-        await run(["chmod", "777", path]);
-        return false;
-    }
+    if (users.length === 0 && groups.length === 0)
+        return { kind: "none" };
+    if (users.length <= 1 && groups.length <= 1)
+        return { kind: "ownership", owner: users[0] ?? "", group: groups[0] ?? "" };
+    return { kind: "acl", users, groups };
+}
 
-    /* Ordinary ownership covers up to one user and one group, which is what
-     * most shares are. Only beyond that are ACLs needed, and setfacl is not
-     * installed by default on Debian and its derivatives — it comes from the
-     * acl package — so it is worth avoiding when it buys nothing.
-     *
-     * setgid on the group cases keeps files created inside the share in the
-     * share's group, so members keep seeing each other's files.
-     */
-    if (users.length <= 1 && groups.length <= 1) {
-        const owner = users.length === 1 ? users[0] : "";
-        const group = groups.length === 1 ? groups[0] : "";
-        await run(["chown", `${owner}:${group}`, path]);
-        await run(["chmod", group ? "2770" : "0700", path]);
+export async function applyPermissions(path: string, principals: string[]): Promise<boolean> {
+    const plan = permissionPlan(principals);
+
+    if (plan.kind === "none")
+        return false;
+
+    /* setgid in the group cases keeps files created inside the share in
+       the share's group, so members keep seeing each other's files. */
+    if (plan.kind === "ownership") {
+        await run(["chown", `${plan.owner}:${plan.group}`, path]);
+        await run(["chmod", plan.group ? "2770" : "0700", path]);
         return false;
     }
 
@@ -547,8 +593,8 @@ export async function applyPermissions(path: string, validUsers: string[]): Prom
     /* Default (d:) entries as well as access entries, so files created
        inside the share inherit them. */
     const acl = [
-        ...users.flatMap(u => [`u:${u}:rwx`, `d:u:${u}:rwx`]),
-        ...groups.flatMap(g => [`g:${g}:rwx`, `d:g:${g}:rwx`]),
+        ...plan.users.flatMap(u => [`u:${u}:rwx`, `d:u:${u}:rwx`]),
+        ...plan.groups.flatMap(g => [`g:${g}:rwx`, `d:g:${g}:rwx`]),
     ];
 
     try {
@@ -561,18 +607,26 @@ export async function applyPermissions(path: string, validUsers: string[]): Prom
 
 /* --- SELinux ---------------------------------------------------------- */
 
-export async function isSELinuxEnabled(): Promise<boolean> {
-    try {
-        const mode = (await runParsed(["getenforce"])).trim();
-        return mode === "Enforcing" || mode === "Permissive";
-    } catch {
-        /* getenforce may be missing, or not on the bridge's PATH, even
-           where SELinux is active; ask the kernel directly. */
-        const enforce = await cockpit.file("/sys/fs/selinux/enforce", { superuser: "try" })
-                .read()
-                .catch(() => null);
-        return enforce !== null;
-    }
+let selinux_enabled: Promise<boolean> | undefined;
+
+/* Cached, and deliberately for the life of the page: SELinux cannot be
+   turned on or off without a reboot, and this is asked once per share
+   every time the share list is refreshed. */
+export function isSELinuxEnabled(): Promise<boolean> {
+    selinux_enabled ??= (async () => {
+        try {
+            const mode = (await runParsed(["getenforce"])).trim();
+            return mode === "Enforcing" || mode === "Permissive";
+        } catch {
+            /* getenforce may be missing, or not on the bridge's PATH, even
+               where SELinux is active; ask the kernel directly. */
+            const enforce = await cockpit.file("/sys/fs/selinux/enforce", { superuser: "try" })
+                    .read()
+                    .catch(() => null);
+            return enforce !== null;
+        }
+    })();
+    return selinux_enabled;
 }
 
 /* Whether Samba is allowed to serve files from this path. Returns true

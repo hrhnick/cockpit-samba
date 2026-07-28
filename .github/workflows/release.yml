@@ -49,6 +49,11 @@ jobs:
           TAG_VERSION="$(git describe --tags)"
           git fetch --force origin ${TAG_VERSION}:refs/tags/${TAG_VERSION}
 
+      # A tree whose PatternFly does not match the vendored pkg/lib builds
+      # cleanly and renders wrong, so it is caught here rather than shipped.
+      - name: Check PatternFly against pkg/lib
+        run: make check-patternfly
+
       - name: Build release
         run: make dist
 

@@ -1,6 +1,6 @@
 {
   "name": "samba",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Samba file sharing manager for Cockpit",
   "type": "module",
   "main": "index.tsx",
@@ -14,6 +14,7 @@
     "watch": "ESBUILD_WATCH='true' ./build.js",
     "build": "./build.js",
     "test": "./test/run-unit-tests.js && ./test/run-dialog-tests.js",
+    "check-patternfly": "node test/check-patternfly.js",
     "typecheck": "tsc",
     "eslint": "eslint src/ test/*.ts test/*.js",
     "eslint:fix": "eslint --fix src/ test/*.ts test/*.js",

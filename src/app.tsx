@@ -18,7 +18,7 @@ import { ServiceCard } from "./components/service-card";
 import { SharesCard } from "./components/shares-card";
 import * as client from "./samba/client";
 import {
-    parseConf, readShares, serializeConf, type SambaConf,
+    guestLoginsAccepted, parseConf, readShares, serializeConf, type SambaConf,
 } from "./samba/conf";
 import {
     useSambaConf, useSambaService, useServerVersion, usePathStatus, usePolled, useSuperuser,
@@ -123,10 +123,10 @@ export const Application = () => {
                     <SharesCard shares={shares}
                                 pathStatus={pathStatus}
                                 connections={connections}
+                                guestLoginsAllowed={conf ? guestLoginsAccepted(conf) : true}
                                 applyConf={applyConf}
                                 onPathsChanged={() => { refreshPaths(); refreshConnections() }}
-                                canEdit={canEdit}
-                                isLoading={!ready} />
+                                canEdit={canEdit} />
                 </Stack>
             </PageSection>
         </Page>

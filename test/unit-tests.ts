@@ -15,9 +15,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-    addSection, getParam, getSection, globalText, isAuditEnabled, normalizeKey,
-    parseBool, parseConf, readShares, removeSection, serializeConf, setAuditEnabled,
-    setGlobalText, setParam, writeShare, type Share,
+    acceptGuestLogins, addSection, emptyShare, getParam, getSection, globalText,
+    guestLoginsAccepted, isAuditEnabled, normalizeKey, parseBool, parseConf,
+    readShares, removeSection, serializeConf, setAuditEnabled, setGlobalText,
+    setParam, writeShare, type Share,
 } from "../src/samba/conf";
 
 const SAMPLE = `#
@@ -181,16 +182,7 @@ test("renaming a share renames its section and keeps its body", () => {
 
 test("creating a share appends a new section", () => {
     const conf = parseConf(SAMPLE);
-    writeShare(conf, {
-        name: "media",
-        path: "/srv/media",
-        comment: "",
-        readOnly: true,
-        browseable: true,
-        guestOk: false,
-        validUsers: [],
-        isSpecial: false,
-    });
+    writeShare(conf, { ...emptyShare(), name: "media", path: "/srv/media", readOnly: true });
 
     const text = serializeConf(conf);
     assert.match(text, /\[media\]\n\tpath = \/srv\/media\n/);
@@ -281,4 +273,153 @@ test("a config with no global section still round trips and takes edits", () => 
 test("the special sections are marked as such", () => {
     const shares = readShares(parseConf("[homes]\n\tbrowseable = no\n[printers]\n\tpath = /var/tmp\n"));
     assert.deepEqual(shares.map(s => s.isSpecial), [true, true]);
+});
+
+/* --- The rest of the share parameters --------------------------------- */
+
+function oneShare(text: string): Share {
+    return readShares(parseConf(text))[0];
+}
+
+/* Round trip a share through a write and read it back, which is how the
+   dialog uses the model: what you save is what you see next time. */
+function rewrite(text: string, changes: Partial<Share>): { share: Share, text: string } {
+    const conf = parseConf(text);
+    const share = readShares(conf)[0];
+    writeShare(conf, { ...share, ...changes }, share.name);
+    const out = serializeConf(conf);
+    return { share: oneShare(out), text: out };
+}
+
+test("a share is available unless it says otherwise", () => {
+    assert.equal(oneShare("[a]\n\tpath = /srv\n").available, true);
+    assert.equal(oneShare("[a]\n\tpath = /srv\n\tavailable = no\n").available, false);
+});
+
+test("turning a share off records it, turning it back on removes the parameter", () => {
+    const off = rewrite("[a]\n\tpath = /srv\n", { available: false });
+    assert.match(off.text, /available = no/);
+    assert.equal(off.share.available, false);
+
+    const on = rewrite(off.text, { available: true });
+    assert.doesNotMatch(on.text, /available/);
+    assert.equal(on.share.available, true);
+});
+
+test("the write list is read and written like valid users", () => {
+    const { share, text } = rewrite("[a]\n\tpath = /srv\n\tread only = yes\n",
+                                    { writeList: ["alice", "@editors"] });
+    assert.match(text, /write list = alice, @editors/);
+    assert.deepEqual(share.writeList, ["alice", "@editors"]);
+
+    assert.doesNotMatch(rewrite(text, { writeList: [] }).text, /write list/);
+});
+
+test("host restrictions keep the syntax they were written in", () => {
+    /* smb.conf's own forms: a subnet, a name, and an EXCEPT clause. */
+    const value = "192.168.1. .example.com EXCEPT 192.168.1.99";
+    const { share, text } = rewrite("[a]\n\tpath = /srv\n", { hostsAllow: value });
+    assert.match(text, /hosts allow = 192\.168\.1\. \.example\.com EXCEPT 192\.168\.1\.99/);
+    assert.equal(share.hostsAllow, value);
+});
+
+test("the older spellings of the host and mask parameters are honoured", () => {
+    const share = oneShare("[a]\n\tpath = /srv\n\tallow hosts = 10.0.0.0/8\n" +
+                           "\tdeny hosts = 10.1.2.3\n\tcreate mode = 0664\n" +
+                           "\tdirectory mode = 0775\n\tgroup = staff\n");
+    assert.equal(share.hostsAllow, "10.0.0.0/8");
+    assert.equal(share.hostsDeny, "10.1.2.3");
+    assert.equal(share.createMask, "0664");
+    assert.equal(share.directoryMask, "0775");
+    assert.equal(share.forceGroup, "staff");
+});
+
+test("writing a mask drops the older spelling that would contradict it", () => {
+    const { text } = rewrite("[a]\n\tpath = /srv\n\tcreate mode = 0600\n", { createMask: "0664" });
+    assert.match(text, /create mask = 0664/);
+    assert.doesNotMatch(text, /create mode/);
+});
+
+test("the recycle bin brings its settings with it and takes them away again", () => {
+    const on = rewrite("[a]\n\tpath = /srv\n", { recycleBin: true });
+    assert.equal(on.share.recycleBin, true);
+    assert.match(on.text, /vfs objects = recycle/);
+    assert.match(on.text, /recycle:repository = \.recycle\/%U/);
+
+    const off = rewrite(on.text, { recycleBin: false });
+    assert.equal(off.share.recycleBin, false);
+    assert.doesNotMatch(off.text, /recycle/);
+});
+
+test("Time Machine needs the module stack and the option, in that order", () => {
+    const { share, text } = rewrite("[a]\n\tpath = /srv\n", { timeMachine: true });
+    assert.match(text, /vfs objects = catia fruit streams_xattr/);
+    assert.match(text, /fruit:time machine = yes/);
+    assert.equal(share.timeMachine, true);
+    /* The global-only options have no effect in a share, so they are not
+       written into one. */
+    assert.doesNotMatch(text, /fruit:model/);
+});
+
+test("the fruit module without the option is not a Time Machine share", () => {
+    assert.equal(oneShare("[a]\n\tpath = /srv\n\tvfs objects = catia fruit streams_xattr\n").timeMachine,
+                 false);
+});
+
+/* vfs objects is not additive: a share that sets it overrides [global]
+   rather than adding to it, so a naive write would silently take audit
+   logging off that share. */
+test("per-share VFS modules keep the ones inherited from global", () => {
+    const conf = parseConf("[global]\n\tvfs objects = full_audit\n\n[a]\n\tpath = /srv\n");
+    const share = readShares(conf)[0];
+    writeShare(conf, { ...share, recycleBin: true }, share.name);
+
+    const modules = /\[a\][\s\S]*?vfs objects = (.*)/.exec(serializeConf(conf))?.[1].split(" ");
+    assert.deepEqual(modules?.sort(), ["full_audit", "recycle"]);
+});
+
+test("a share with nothing of its own keeps inheriting global's modules", () => {
+    const conf = parseConf("[global]\n\tvfs objects = full_audit\n\n[a]\n\tpath = /srv\n");
+    const share = readShares(conf)[0];
+    writeShare(conf, { ...share, comment: "unrelated edit" }, share.name);
+    /* Only [global] mentions the modules; the share still inherits. */
+    assert.equal(serializeConf(conf).match(/vfs objects/g)?.length, 1);
+});
+
+test("turning the last managed module off leaves other modules alone", () => {
+    const on = rewrite("[a]\n\tpath = /srv\n\tvfs objects = shadow_copy2\n", { recycleBin: true });
+    assert.match(on.text, /vfs objects = shadow_copy2 recycle/);
+
+    const off = rewrite(on.text, { recycleBin: false });
+    assert.match(off.text, /vfs objects = shadow_copy2/);
+    assert.doesNotMatch(off.text, /recycle/);
+});
+
+/* Samba's map to guest defaults to Never, which turns away the very
+   logins guest ok is meant to admit. */
+test("allowing guests on a share also makes the server accept guest logins", () => {
+    const conf = parseConf("[global]\n\tworkgroup = X\n\n[a]\n\tpath = /srv\n");
+    assert.equal(guestLoginsAccepted(conf), false);
+
+    const share = readShares(conf)[0];
+    writeShare(conf, { ...share, guestOk: true }, share.name);
+
+    assert.equal(guestLoginsAccepted(conf), true);
+    assert.match(serializeConf(conf), /map to guest = Bad User/);
+});
+
+test("an existing map to guest setting is left as the admin wrote it", () => {
+    const conf = parseConf("[global]\n\tmap to guest = Bad Password\n\n[a]\n\tpath = /srv\n");
+    const share = readShares(conf)[0];
+    writeShare(conf, { ...share, guestOk: true }, share.name);
+    assert.match(serializeConf(conf), /map to guest = Bad Password/);
+});
+
+test("guest mapping is recognised however it is spelled", () => {
+    assert.equal(guestLoginsAccepted(parseConf("[global]\n\tmap to guest = Never\n")), false);
+    assert.equal(guestLoginsAccepted(parseConf("[global]\n\tMapToGuest = bad user\n")), true);
+
+    const conf = parseConf("[global]\n\tworkgroup = X\n");
+    acceptGuestLogins(conf);
+    assert.equal(guestLoginsAccepted(conf), true);
 });

@@ -10,13 +10,16 @@ import { useDialogs } from "dialogs";
 import { KebabDropdown } from "cockpit-components-dropdown";
 import { ListingTable } from "cockpit-components-table";
 import { EmptyStatePanel } from "cockpit-components-empty-state";
+import { fmt_to_fragments } from "utils";
 
 import { Alert, AlertActionLink } from "@patternfly/react-core/dist/esm/components/Alert/index.js";
 import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
 import { Card, CardHeader, CardTitle } from "@patternfly/react-core/dist/esm/components/Card/index.js";
+import { ClipboardCopy } from "@patternfly/react-core/dist/esm/components/ClipboardCopy/index.js";
 import {
     DescriptionList, DescriptionListDescription, DescriptionListGroup, DescriptionListTerm,
 } from "@patternfly/react-core/dist/esm/components/DescriptionList/index.js";
+import { Divider } from "@patternfly/react-core/dist/esm/components/Divider/index.js";
 import { DropdownItem } from "@patternfly/react-core/dist/esm/components/Dropdown/index.js";
 import { Icon } from "@patternfly/react-core/dist/esm/components/Icon/index.js";
 import { Label } from "@patternfly/react-core/dist/esm/components/Label/index.js";
@@ -30,7 +33,8 @@ import { SortByDirection } from "@patternfly/react-table";
 
 import { ShareDialog } from "../dialogs/share-dialog";
 import {
-    CreateDirectoryDialog, DeleteShareDialog, FixSELinuxDialog,
+    CreateDirectoryDialog, DeleteShareDialog, FixPermissionsDialog, FixSELinuxDialog,
+    sharePrincipals,
 } from "../dialogs/share-actions";
 import type { Connection } from "../samba/client";
 import type { PathStatus } from "../samba/hooks";
@@ -105,43 +109,70 @@ const ProblemAlert = ({ share, problem, canEdit, onFixed }: {
     );
 };
 
-const ShareActions = ({ share, shares, applyConf, onPathsChanged }: {
+const ShareActions = ({ share, shares, guestLoginsAllowed, applyConf, onPathsChanged }: {
     share: Share;
     shares: Share[];
+    guestLoginsAllowed: boolean;
     applyConf: (mutate: (conf: SambaConf) => void) => Promise<void>;
     onPathsChanged: () => void;
 }) => {
     const Dialogs = useDialogs();
 
-    return (
-        <KebabDropdown dropdownItems={[
-            <DropdownItem key="edit"
+    const items = [
+        <DropdownItem key="edit"
+                      onClick={() => Dialogs.show(
+                          <ShareDialog share={share} shares={shares}
+                                       guestLoginsAllowed={guestLoginsAllowed}
+                                       applyConf={applyConf}
+                                       onPathsChanged={onPathsChanged} />)}>
+            {_("Edit share")}
+        </DropdownItem>,
+    ];
+
+    /* Only worth offering where there is a folder to fix and accounts to
+       grant it to. */
+    if (!share.isSpecial && share.path && sharePrincipals(share).length > 0)
+        items.push(
+            <DropdownItem key="permissions"
                           onClick={() => Dialogs.show(
-                              <ShareDialog share={share} shares={shares} applyConf={applyConf}
-                                           onPathsChanged={onPathsChanged} />)}>
-                {_("Edit share")}
-            </DropdownItem>,
-            <DropdownItem key="delete" isDanger
-                          onClick={() => Dialogs.show(
-                              <DeleteShareDialog share={share} applyConf={applyConf} />)}>
-                {_("Delete share")}
-            </DropdownItem>,
-        ]} />
-    );
+                              <FixPermissionsDialog share={share} onDone={onPathsChanged} />)}>
+                {_("Fix folder permissions")}
+            </DropdownItem>);
+
+    items.push(
+        <Divider key="separator" />,
+        <DropdownItem key="delete" isDanger
+                      onClick={() => Dialogs.show(
+                          <DeleteShareDialog share={share} applyConf={applyConf} />)}>
+            {_("Delete share")}
+        </DropdownItem>);
+
+    return <KebabDropdown dropdownItems={items} />;
 };
+
+/* A list of users or groups as the chips the Accounts page uses. */
+const PrincipalLabels = ({ principals }: { principals: string[] }) => (
+    <Flex spaceItems={{ default: "spaceItemsSm" }}>
+        {principals.map(name => (
+            <Label key={name} color={name.startsWith("@") ? "yellow" : "blue"} isCompact>
+                {name}
+            </Label>
+        ))}
+    </Flex>
+);
 
 export interface SharesCardProps {
     shares: Share[];
     pathStatus: Record<string, PathStatus>;
     connections: Connection[];
+    guestLoginsAllowed: boolean;
     applyConf: (mutate: (conf: SambaConf) => void) => Promise<void>;
     onPathsChanged: () => void;
     canEdit: boolean;
-    isLoading: boolean;
 }
 
 export const SharesCard = ({
-    shares, pathStatus, connections, applyConf, onPathsChanged, canEdit, isLoading,
+    shares, pathStatus, connections, guestLoginsAllowed, applyConf, onPathsChanged, canEdit,
 }: SharesCardProps) => {
     const Dialogs = useDialogs();
     const [filter, setFilter] = useState("");
@@ -182,15 +213,20 @@ export const SharesCard = ({
         );
 
         const access = (
-            <Flex spaceItems={{ default: "spaceItemsXs" }}>
+            <Flex spaceItems={{ default: "spaceItemsSm" }}>
+                {!share.available && <Label color="red" isCompact>{_("Off")}</Label>}
                 <Label color={share.readOnly ? "orange" : "blue"} isCompact>
                     {share.readOnly ? _("Read only") : _("Read and write")}
                 </Label>
                 {share.guestOk && <Label color="orange" isCompact>{_("Guests")}</Label>}
                 {!share.browseable && <Label color="grey" isCompact>{_("Hidden")}</Label>}
                 {share.isSpecial && <Label color="purple" isCompact>{_("Special")}</Label>}
+                {share.timeMachine && <Label color="teal" isCompact>{_("Time Machine")}</Label>}
+                {share.recycleBin && <Label color="teal" isCompact>{_("Recycle bin")}</Label>}
             </Flex>
         );
+
+        const disk = pathStatus[share.path]?.disk;
 
         return {
             props: { key: share.name, "data-row-id": share.name },
@@ -202,7 +238,9 @@ export const SharesCard = ({
                 {
                     title: canEdit
                         ? (
-                            <ShareActions share={share} shares={shares} applyConf={applyConf}
+                            <ShareActions share={share} shares={shares}
+                                          guestLoginsAllowed={guestLoginsAllowed}
+                                          applyConf={applyConf}
                                           onPathsChanged={onPathsChanged} />
                         )
                         : null,
@@ -215,34 +253,73 @@ export const SharesCard = ({
                         <ProblemAlert share={share} problem={problem} canEdit={canEdit}
                                       onFixed={onPathsChanged} />
                     )}
+                    {!share.available && (
+                        <Alert isInline variant="info" title={_("This share is turned off")}>
+                            {_("It keeps its configuration, but Samba does not offer it to clients.")}
+                        </Alert>
+                    )}
+                    {share.guestOk && !guestLoginsAllowed && (
+                        <Alert isInline variant="warning" title={_("Guests are allowed but cannot log in")}>
+                            {fmt_to_fragments(
+                                _("This share allows guests, but the server's $0 setting turns unknown users away before they reach it. Saving the share from $1 sets it."),
+                                <code>map to guest</code>, <strong>{_("Edit share")}</strong>)}
+                        </Alert>
+                    )}
                     <DescriptionList isHorizontal isCompact>
                         <DescriptionListGroup>
                             <DescriptionListTerm>{_("Who can connect")}</DescriptionListTerm>
                             <DescriptionListDescription>
                                 {share.validUsers.length === 0
                                     ? _("Every user with a Samba password")
-                                    : (
-                                        <Flex spaceItems={{ default: "spaceItemsXs" }}>
-                                            {share.validUsers.map(user => (
-                                                <Label key={user}
-                                                       color={user.startsWith("@") ? "yellow" : "blue"}
-                                                       isCompact>
-                                                    {user}
-                                                </Label>
-                                            ))}
-                                        </Flex>
-                                    )}
+                                    : <PrincipalLabels principals={share.validUsers} />}
                             </DescriptionListDescription>
                         </DescriptionListGroup>
+                        {share.writeList.length > 0 && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>{_("May write")}</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                    <PrincipalLabels principals={share.writeList} />
+                                </DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
+                        {(share.hostsAllow || share.hostsDeny) && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>{_("Client addresses")}</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                    {share.hostsAllow && (
+                                        <div>{cockpit.format(_("Allowed: $0"), share.hostsAllow)}</div>
+                                    )}
+                                    {share.hostsDeny && (
+                                        <div>{cockpit.format(_("Refused: $0"), share.hostsDeny)}</div>
+                                    )}
+                                </DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
                         <DescriptionListGroup>
                             <DescriptionListTerm>{_("Connected clients")}</DescriptionListTerm>
                             <DescriptionListDescription>{inUse}</DescriptionListDescription>
                         </DescriptionListGroup>
+                        {disk && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>{_("Free space")}</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                    {cockpit.format(_("$0 free of $1"),
+                                                    cockpit.format_bytes(disk.available),
+                                                    cockpit.format_bytes(disk.total))}
+                                </DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
                         {share.path && (
                             <DescriptionListGroup>
                                 <DescriptionListTerm>{_("Network address")}</DescriptionListTerm>
                                 <DescriptionListDescription>
-                                    <code>{`\\\\${serverAddress()}\\${share.name}`}</code>
+                                    {/* Read only, but still selectable and
+                                        copyable: it has to be typed into a
+                                        client exactly. */}
+                                    <ClipboardCopy isReadOnly hoverTip={_("Copy")} clickTip={_("Copied")}
+                                                   variant="inline-compact">
+                                        {`\\\\${serverAddress()}\\${share.name}`}
+                                    </ClipboardCopy>
                                 </DescriptionListDescription>
                             </DescriptionListGroup>
                         )}
@@ -268,7 +345,9 @@ export const SharesCard = ({
                         <ToolbarItem align={{ md: "alignEnd" }}>
                             <Button id="samba-share-create"
                                     onClick={() => Dialogs.show(
-                                        <ShareDialog share={null} shares={shares} applyConf={applyConf}
+                                        <ShareDialog share={null} shares={shares}
+                                                     guestLoginsAllowed={guestLoginsAllowed}
+                                                     applyConf={applyConf}
                                                      onPathsChanged={onPathsChanged} />)}>
                                 {_("Create share")}
                             </Button>
@@ -290,7 +369,6 @@ export const SharesCard = ({
                           columns={columns}
                           rows={rows}
                           sortBy={{ index: 0, direction: SortByDirection.asc }}
-                          loading={isLoading ? _("Loading…") : ""}
                           isEmptyStateInTable={needle !== "" && filtered.length !== shares.length}
                           emptyComponent={needle
                               ? (
@@ -308,6 +386,7 @@ export const SharesCard = ({
                                                        action: _("Create share"),
                                                        onAction: () => Dialogs.show(
                                                            <ShareDialog share={null} shares={shares}
+                                                                        guestLoginsAllowed={guestLoginsAllowed}
                                                                         applyConf={applyConf}
                                                                         onPathsChanged={onPathsChanged} />),
                                                    }} />
