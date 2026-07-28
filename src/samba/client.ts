@@ -250,8 +250,10 @@ interface SmbstatusJson {
 }
 
 /* smbstatus --json, on Samba 4.16 and later. Far more robust than
-   scraping the fixed-width report, so it is tried first. */
-function parseConnectionsJson(text: string): Connection[] | null {
+   scraping the fixed-width report, so it is tried first. Exported for the
+   unit tests: it is pure, and exactly the kind of parsing that breaks
+   quietly. */
+export function parseConnectionsJson(text: string): Connection[] | null {
     let data: SmbstatusJson;
     try {
         data = JSON.parse(text);
@@ -328,14 +330,11 @@ function parseColumns(text: string, wanted: [string, string][]): Record<string, 
             });
 }
 
-async function parseConnectionsText(): Promise<Connection[]> {
-    /* -p lists sessions and has the username; -S lists the shares each
-       process has open and has no username. PID joins the two. */
-    const [processes, tcons] = await Promise.all([
-        runParsed(["smbstatus", "-p"]).catch(() => ""),
-        runParsed(["smbstatus", "-S"]).catch(() => ""),
-    ]);
-
+/* The pre-JSON fallback: join `smbstatus -p` (sessions, with the
+   username) and `smbstatus -S` (the shares each process has open) by
+   PID. Takes the two reports as text — the spawning lives in
+   getConnections — so the tests can feed it captured output. */
+export function parseConnectionsText(processes: string, tcons: string): Connection[] {
     const connections = new Map<string, Connection>();
 
     for (const row of parseColumns(processes, [
@@ -382,7 +381,11 @@ export async function getConnections(): Promise<Connection[]> {
         if (parsed)
             return parsed;
     }
-    return parseConnectionsText().catch(() => []);
+    const [processes, tcons] = await Promise.all([
+        runParsed(["smbstatus", "-p"]).catch(() => ""),
+        runParsed(["smbstatus", "-S"]).catch(() => ""),
+    ]);
+    return parseConnectionsText(processes, tcons);
 }
 
 /* Close every session a client has open. smbd has no way to drop one

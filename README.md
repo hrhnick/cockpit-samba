@@ -149,7 +149,7 @@ Then open Cockpit at `https://localhost:9090` and go to *Samba shares*.
 Checks:
 
 ```sh
-npm test              # smb.conf model, and every dialog mounts
+npm test              # smb.conf model, client parsers, and every dialog mounts
 npm run typecheck     # tsc
 npm run eslint
 npm run stylelint
