@@ -165,8 +165,9 @@ rpm: $(TARFILE) $(NODE_CACHE) $(SPEC)
 	  --define "_buildrootdir `pwd`/build" \
 	  $(SPEC)
 	find `pwd`/output -name '*.rpm' -printf '%f\n' -exec mv {} . \;
-	rm -r "`pwd`/rpmbuild"
-	rm -r "`pwd`/output" "`pwd`/build"
+	# -f because rpm removes the buildroot itself once the package is built,
+	# so `build` is often already gone by the time we get here
+	rm -rf "`pwd`/rpmbuild" "`pwd`/output" "`pwd`/build"
 
 # A zip of the built page, for installing by hand on a distribution we do not
 # package for. It unpacks to a single "samba" directory, so extracting it into
