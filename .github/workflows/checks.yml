@@ -46,3 +46,29 @@ jobs:
 
       - name: Unit and dialog tests
         run: npm test
+
+  # The release builds in the Cockpit tasks container, which carries a much
+  # newer npm than the runner image above; npm ci is strict about the
+  # lockfile and the two versions disagree about what a complete one looks
+  # like. A lockfile that installs here can therefore still fail the
+  # release - which is exactly what happened to 2.0.6, after the checks
+  # above had gone green. This installs in the release's own environment so
+  # that failure lands on the pull request instead of on a tag.
+  release-env:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: ghcr.io/cockpit-project/tasks
+      options: --user root
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v7
+
+      - name: Pacify git's permission check
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install from the lockfile, as the release does
+        run: npm ci
+
+      - name: Report the npm this ran against
+        run: npm --version && node --version
