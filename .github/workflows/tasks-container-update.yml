@@ -2,7 +2,7 @@ name: tasks-container-update
 on:
   schedule:
     - cron: '0 2 * * 1'
-  # can be run manually on https://github.com/cockpit-project/samba/actions
+  # can be run manually on https://github.com/hrhnick/cockpit-samba/actions
   workflow_dispatch:
 jobs:
   tasks-container-update:
@@ -26,7 +26,7 @@ jobs:
 
       # https://github.blog/2022-04-12-git-security-vulnerability-announced/
       - name: Pacify git's permission check
-        run: git config --global --add safe.directory /__w/samba/samba
+        run: git config --global --add safe.directory /__w/cockpit-samba/cockpit-samba
 
       - name: Run tasks-container-update
         run: |
