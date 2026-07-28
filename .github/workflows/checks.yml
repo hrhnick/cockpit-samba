@@ -24,17 +24,9 @@ jobs:
         uses: actions/checkout@v7
 
       # No setup-node step: the runner image already ships a Node newer than
-      # package.json asks for, which is what the release workflow's deb job
-      # builds with too.
-
-      # From the committed lockfile, so the checks run against the versions
-      # the repo pins. Left to itself, the Makefile deletes the lockfile and
-      # installs whatever npm serves that day; touching the lockfile
-      # afterwards keeps its rule from doing exactly that.
-      - name: Install pinned dependencies
-        run: npm ci && touch package-lock.json
-
-      # Fetches pkg/lib from the pinned Cockpit commit and builds into dist/.
+      # package.json asks for. `make` installs node_modules with npm ci from
+      # the committed lockfile, fetches pkg/lib from the pinned Cockpit
+      # commit, and builds into dist/.
       - name: Build
         run: make
 

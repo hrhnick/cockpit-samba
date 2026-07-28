@@ -49,12 +49,6 @@ jobs:
           TAG_VERSION="$(git describe --tags)"
           git fetch --force origin ${TAG_VERSION}:refs/tags/${TAG_VERSION}
 
-      # From the committed lockfile: a release built from floating versions
-      # is not the tree that was tested. The touch keeps the Makefile's own
-      # install rule from replacing the lockfile.
-      - name: Install pinned dependencies
-        run: npm ci && touch package-lock.json
-
       # A tree whose PatternFly does not match the vendored pkg/lib builds
       # cleanly and renders wrong, so it is caught here rather than shipped.
       - name: Check PatternFly against pkg/lib
@@ -136,10 +130,6 @@ jobs:
         run: |
           TAG_VERSION="$(git describe --tags)"
           git fetch --force origin ${TAG_VERSION}:refs/tags/${TAG_VERSION}
-
-      # See the source job: the tarball this builds re-runs the page build.
-      - name: Install pinned dependencies
-        run: npm ci && touch package-lock.json
 
       - name: Build Debian package
         run: make deb

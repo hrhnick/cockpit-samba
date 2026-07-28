@@ -28,10 +28,6 @@ jobs:
       - name: Pacify git's permission check
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      # From the committed lockfile; see checks.yml for why the touch.
-      - name: Install pinned dependencies
-        run: npm ci && touch package-lock.json
-
       # Fetches the test VM image, installs the built package into it,
       # boots it, and drives a real browser against the page.
       - name: Run integration tests
