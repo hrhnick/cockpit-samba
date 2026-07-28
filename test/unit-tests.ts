@@ -16,10 +16,10 @@ import test from "node:test";
 
 import {
     acceptGuestLogins, addSection, emptyShare, getParam, getSection, globalText,
-    guestAccount, guestsShutOut, sharePrincipals,
+    groupEntryName, guestAccount, guestsShutOut, isGroupEntry, sharePrincipals,
     guestLoginsAccepted, isAuditEnabled, normalizeKey, parseBool, parseConf,
-    readShares, removeSection, serializeConf, setAuditEnabled, setGlobalText,
-    renameSection, setParam, writeShare, type Share,
+    parseValidUsers, readShares, removeSection, serializeConf, setAuditEnabled,
+    setGlobalText, renameSection, setParam, writeShare, type Share,
 } from "../src/samba/conf";
 import { fcontextPattern, isProtectedPath, normalizePath } from "../src/samba/paths";
 
@@ -237,6 +237,19 @@ test("the global section is exposed and replaced as text", () => {
     assert.match(text, /\[documents\]/);
 });
 
+/* A [section] header pasted into the global editor would end [global]
+   early on disk and turn the rest into that section — a share created
+   from a dialog that claims to edit only [global]. */
+test("the global editor refuses text that starts another section", () => {
+    const conf = parseConf(SAMPLE);
+    assert.throws(() => setGlobalText(conf, "\tworkgroup = X\n[evil]\n\tpath = /\n"),
+                  /section header/);
+
+    /* A commented-out header is just a comment, not a section. */
+    setGlobalText(conf, "\tworkgroup = X\n\t# [not a section]");
+    assert.match(serializeConf(conf), /# \[not a section\]/);
+});
+
 test("enabling audit logging keeps other VFS modules", () => {
     const conf = parseConf("[global]\n\tvfs objects = recycle\n");
     setAuditEnabled(conf, true);
@@ -315,6 +328,42 @@ test("the write list is read and written like valid users", () => {
     assert.deepEqual(share.writeList, ["alice", "@editors"]);
 
     assert.doesNotMatch(rewrite(text, { writeList: [] }).text, /write list/);
+});
+
+/* Names with spaces are quoted in smb.conf, and Samba's tokenizer
+   toggles quoting wherever a quote appears — so @"domain admins" and
+   "@domain admins" both name the same group. Splitting on whitespace
+   would cut these in half and then write the halves back. */
+test("quoted names survive reading and are quoted again on write", () => {
+    assert.deepEqual(parseValidUsers('"domain users" alice, @"domain admins"'),
+                     ["domain users", "alice", "@domain admins"]);
+    assert.deepEqual(parseValidUsers('"@domain admins"'), ["@domain admins"]);
+
+    const { share, text } = rewrite("[a]\n\tpath = /srv\n",
+                                    { validUsers: ["domain users", "alice", "@domain admins"] });
+    assert.match(text, /valid users = "domain users", alice, "@domain admins"/);
+    /* And the written line reads back as the same list. */
+    assert.deepEqual(share.validUsers, ["domain users", "alice", "@domain admins"]);
+});
+
+/* Samba strips quotes wherever they appear, so a name containing one
+   cannot be written into a list at all — refusing beats corrupting. */
+test("a name containing a quote is refused, not mangled", () => {
+    const conf = parseConf("[a]\n\tpath = /srv\n");
+    const share = { ...readShares(conf)[0], validUsers: ['ali"ce'] };
+    assert.throws(() => writeShare(conf, share, "a"), /must not contain/);
+});
+
+test("groups are marked with @, + or &, alone or combined", () => {
+    assert.equal(isGroupEntry("@staff"), true);
+    assert.equal(isGroupEntry("+staff"), true);
+    assert.equal(isGroupEntry("&netgroup"), true);
+    assert.equal(isGroupEntry("+&staff"), true);
+    assert.equal(isGroupEntry("alice"), false);
+
+    assert.equal(groupEntryName("@staff"), "staff");
+    assert.equal(groupEntryName("+&staff"), "staff");
+    assert.equal(groupEntryName("alice"), "alice");
 });
 
 test("host restrictions keep the syntax they were written in", () => {

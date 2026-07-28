@@ -23,6 +23,9 @@ Depends: ${misc:Depends},
 # Windows' Network view. The page works without either, so they are
 # recommendations rather than dependencies.
 Recommends: acl, wsdd
+# avahi advertises the server over mDNS, which is how macOS machines find
+# it by name on the network.
+Suggests: avahi-daemon
 Description: Cockpit module for managing Samba file shares
  A Cockpit page for managing Samba file shares: create and edit shares, give
  local accounts access to them, watch who is connected, and keep the server

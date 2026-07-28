@@ -13,9 +13,11 @@ import { FileUpload } from "@patternfly/react-core/dist/esm/components/FileUploa
 import { FormGroup } from "@patternfly/react-core/dist/esm/components/Form/index.js";
 import { TextArea } from "@patternfly/react-core/dist/esm/components/TextArea/index.js";
 
+import { FormHelper } from "cockpit-components-form-helper";
+
 import { DialogFrame } from "../components/dialog";
 import * as client from "../samba/client";
-import { globalText, setGlobalText, serializeConf, type SambaConf } from "../samba/conf";
+import { globalText, parseConf, setGlobalText, serializeConf, type SambaConf } from "../samba/conf";
 
 const _ = cockpit.gettext;
 
@@ -30,6 +32,13 @@ export const GlobalSettingsDialog = ({ conf, applyConf }: {
 }) => {
     const [text, setText] = useState(() => globalText(conf));
 
+    /* A [section] header pasted here would end [global] early on disk and
+       write the rest into that other section, silently creating or taking
+       over a share. The model refuses it too; this refusal explains. */
+    const sectionError = parseConf(text).sections.some(s => s.headerLines.length > 0)
+        ? _("Section headers do not belong here: this edits only the settings inside [global]. Shares are edited from the shares table, and whole sections from Back up or restore.")
+        : "";
+
     return (
         <DialogFrame id="global-settings-dialog"
                      title={_("Global settings")}
@@ -37,15 +46,18 @@ export const GlobalSettingsDialog = ({ conf, applyConf }: {
                          _("The $0 section of the Samba configuration. Changes are checked with $1 before they are saved."),
                          <code>[global]</code>, <code>testparm</code>)}
                      actionLabel={_("Save")}
+                     isActionDisabled={!!sectionError}
                      onApply={() => applyConf(current => setGlobalText(current, text))}>
             <FormGroup label={_("Settings")} fieldId="global-settings-text">
                 <TextArea id="global-settings-text"
                           value={text}
                           onChange={(_event, value) => setText(value)}
                           aria-label={_("Global settings")}
+                          validated={sectionError ? "error" : "default"}
                           resizeOrientation="vertical"
                           rows={16}
                           className="samba-conf-editor" />
+                <FormHelper fieldId="global-settings-text" helperTextInvalid={sectionError} />
             </FormGroup>
         </DialogFrame>
     );

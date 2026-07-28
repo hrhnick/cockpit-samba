@@ -21,7 +21,7 @@
 import cockpit from "cockpit";
 import { fsinfo } from "cockpit/fsinfo";
 
-import { serializeConf, type SambaConf } from "./conf";
+import { groupEntryName, isGroupEntry, serializeConf, type SambaConf } from "./conf";
 import { fcontextPattern, isProtectedPath, normalizePath } from "./paths";
 
 const _ = cockpit.gettext;
@@ -202,7 +202,12 @@ export async function configWarnings(): Promise<string[]> {
     const out = await runParsed(
         ["sh", "-ec", `exec testparm -s ${SMB_CONF} 2>&1 >/dev/null`])
             .catch(() => "");
+    return filterWarnings(out);
+}
 
+/* The line filter behind configWarnings, separated so the unit tests can
+   feed it captured testparm output. */
+export function filterWarnings(out: string): string[] {
     const seen = new Set<string>();
     for (const line of out.split("\n")) {
         const text = line.trim();
@@ -648,10 +653,12 @@ export type PermissionPlan =
     | { kind: "acl", users: string[], groups: string[] };
 
 /* What applyPermissions would do, so that a dialog can say so before the
-   user agrees to it rather than after. */
+   user agrees to it rather than after. Group entries keep their smb.conf
+   markers (@, +, &) until here; classifying "+staff" as a user named
+   +staff would put that on a chown command line. */
 export function permissionPlan(principals: string[]): PermissionPlan {
-    const users = principals.filter(u => !u.startsWith("@"));
-    const groups = principals.filter(u => u.startsWith("@")).map(g => g.slice(1))
+    const users = principals.filter(entry => !isGroupEntry(entry));
+    const groups = principals.filter(isGroupEntry).map(groupEntryName)
             .filter(Boolean);
 
     if (users.length === 0 && groups.length === 0)
