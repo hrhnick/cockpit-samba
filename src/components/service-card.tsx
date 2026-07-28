@@ -13,7 +13,7 @@ import * as timeformat from "timeformat";
 
 import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
 import {
-    Card, CardExpandableContent, CardHeader, CardTitle,
+    Card, CardBody, CardExpandableContent, CardHeader, CardTitle,
 } from "@patternfly/react-core/dist/esm/components/Card/index.js";
 import { Content, ContentVariants } from "@patternfly/react-core/dist/esm/components/Content/index.js";
 import {
@@ -31,6 +31,7 @@ import { SyncAltIcon } from "@patternfly/react-icons";
 import { useAlerts } from "./alerts";
 import { GlobalSettingsDialog, BackupRestoreDialog } from "../dialogs/config-dialogs";
 import { LogsDialog } from "../dialogs/logs-dialog";
+import { ManageAccessDialog } from "../dialogs/manage-access-dialog";
 import { errorString, type Connection } from "../samba/client";
 import type { ServiceState } from "../samba/hooks";
 import type { SambaConf } from "../samba/conf";
@@ -91,6 +92,10 @@ export const ServiceCard = ({
     };
 
     const actions = [
+        <DropdownItem key="access" onClick={() => Dialogs.show(
+            <ManageAccessDialog canEdit={canEdit} />)}>
+            {_("Manage access")}
+        </DropdownItem>,
         <DropdownItem key="settings" onClick={() => Dialogs.show(
             <GlobalSettingsDialog conf={conf} applyConf={applyConf} />)}>
             {_("Server settings")}
@@ -159,7 +164,7 @@ export const ServiceCard = ({
     const rows = connections.map(connection => ({
         props: { key: connection.id },
         columns: [
-            { title: connection.username || <span className="pf-v6-u-color-200">{_("Guest")}</span> },
+            { title: connection.username || <span className="samba-subtle">{_("Guest")}</span> },
             {
                 title: (
                     <Flex spaceItems={{ default: "spaceItemsXs" }}>
@@ -184,46 +189,51 @@ export const ServiceCard = ({
                             "aria-label": _("Samba server"),
                             "aria-expanded": isExpanded,
                         }}>
-                <CardTitle className="pf-v6-l-flex pf-m-align-items-center pf-m-space-items-md">
-                    <Content component={ContentVariants.h2}>{_("Samba server")}</Content>
-                    <Label color={status.color} id="samba-service-state">{status.text}</Label>
-                    {!isExpanded && isRunning && connections.length > 0 && (
-                        <Label color="blue" isCompact>
-                            {cockpit.format(cockpit.ngettext("$0 connection", "$0 connections", connections.length),
-                                            connections.length)}
-                        </Label>
-                    )}
+                <CardTitle>
+                    <Flex spaceItems={{ default: "spaceItemsMd" }}
+                          alignItems={{ default: "alignItemsCenter" }}>
+                        <Content component={ContentVariants.h2}>{_("Samba server")}</Content>
+                        <Label color={status.color} id="samba-service-state">{status.text}</Label>
+                        {!isExpanded && isRunning && connections.length > 0 && (
+                            <Label color="blue">
+                                {cockpit.format(cockpit.ngettext("$0 connection", "$0 connections", connections.length),
+                                                connections.length)}
+                            </Label>
+                        )}
+                    </Flex>
                 </CardTitle>
             </CardHeader>
             <CardExpandableContent>
-                <DescriptionList isHorizontal isFluid className="pf-v6-u-p-md">
-                    {version && (
+                <CardBody>
+                    <DescriptionList isHorizontal isFluid>
+                        {version && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>{_("Version")}</DescriptionListTerm>
+                                <DescriptionListDescription>{version}</DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
+                        {service.activeSince && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>{_("Running since")}</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                    {timeformat.dateTime(service.activeSince)}
+                                </DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
                         <DescriptionListGroup>
-                            <DescriptionListTerm>{_("Version")}</DescriptionListTerm>
-                            <DescriptionListDescription>{version}</DescriptionListDescription>
-                        </DescriptionListGroup>
-                    )}
-                    {service.activeSince && (
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>{_("Running since")}</DescriptionListTerm>
+                            <DescriptionListTerm>{_("Start on boot")}</DescriptionListTerm>
                             <DescriptionListDescription>
-                                {timeformat.dateTime(service.activeSince)}
+                                <Switch id="samba-service-enabled"
+                                        aria-label={_("Start Samba on boot")}
+                                        isChecked={service.enabled === true}
+                                        isDisabled={!canEdit || service.enabled === undefined}
+                                        onChange={(_event, checked) => attempt(
+                                            _("Failed to change whether Samba starts on boot"),
+                                            () => service.setEnabled(checked))()} />
                             </DescriptionListDescription>
                         </DescriptionListGroup>
-                    )}
-                    <DescriptionListGroup>
-                        <DescriptionListTerm>{_("Start on boot")}</DescriptionListTerm>
-                        <DescriptionListDescription>
-                            <Switch id="samba-service-enabled"
-                                    aria-label={_("Start Samba on boot")}
-                                    isChecked={service.enabled === true}
-                                    isDisabled={!canEdit || service.enabled === undefined}
-                                    onChange={(_event, checked) => attempt(
-                                        _("Failed to change whether Samba starts on boot"),
-                                        () => service.setEnabled(checked))()} />
-                        </DescriptionListDescription>
-                    </DescriptionListGroup>
-                </DescriptionList>
+                    </DescriptionList>
+                </CardBody>
 
                 {isRunning && (
                     <ListingTable id="samba-connections"
