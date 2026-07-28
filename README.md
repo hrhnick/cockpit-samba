@@ -21,6 +21,11 @@ Every release carries a Debian package, an RPM, a zip of the built page, and a
 source tarball, on the [releases
 page](https://github.com/hrhnick/cockpit-samba/releases).
 
+The deb and rpm depend on Samba itself and recommend `acl` (folders shared
+with several users) and [wsdd](https://github.com/christgau/wsdd) (which makes
+the server appear in Windows' Network view), so a package install brings
+everything the page manages.
+
 The packages are named without a version, so the newest one always has the same
 address and can be fetched by a script:
 
@@ -72,8 +77,8 @@ Reload the browser and the page appears under *Samba shares*.
   a cap on how much space the backups may take
 - Warns about combinations that quietly do nothing, like a guest share whose
   user list keeps guests out
-- Expand a share to see who may connect, free space, how many clients are
-  connected, and the network address to copy into a client
+- *View details* on a share shows who may connect, free space, how many
+  clients are connected, and the network address to copy into a client
 - Detects a share whose folder is missing or which SELinux is blocking, and
   offers to fix either
 - *Fix folder permissions* gives the share's users access to the folder itself,
@@ -92,11 +97,6 @@ Reload the browser and the page appears under *Samba shares*.
 **Server**
 
 - Status, version and uptime; start, stop and restart; start on boot
-- Windows discovery: one switch installs and runs
-  [wsdd](https://github.com/christgau/wsdd), without which the server never
-  appears in Windows' Network view. Not every distribution packages it —
-  Raspberry Pi OS and older Debian carry neither `wsdd` nor `wsdd2` — and
-  where none is available the page says so instead of offering the switch
 - Notices a firewalld that is blocking SMB and offers to open it, and shows
   the warnings `testparm` has about the configuration
 - Who is connected, which shares they have open, and whether the connection is

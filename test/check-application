@@ -223,9 +223,13 @@ class TestApplication(testlib.MachineCase):
         self.login_and_go("/samba")
         b.wait_in_text("#samba-shares-list", "conflictshare")
 
-        # The expanded row explains the trap
-        b.click("#samba-shares-list tr:contains('conflictshare') .pf-v6-c-table__toggle button")
-        b.wait_in_text("#samba-shares-list", "user list keeps them out")
+        # The details dialog explains the trap
+        b.click("#samba-shares-list tr:contains('conflictshare') .pf-v6-c-menu-toggle")
+        b.click(".pf-v6-c-menu button:contains('View details')")
+        b.wait_visible("#share-details-dialog")
+        b.wait_in_text("#share-details-dialog", "user list keeps them out")
+        b.click("#share-details-dialog button:contains('Close')")
+        b.wait_not_present("#share-details-dialog")
 
         # So does the dialog, live as the boxes change
         b.click("#samba-shares-list tr:contains('conflictshare') .pf-v6-c-menu-toggle")

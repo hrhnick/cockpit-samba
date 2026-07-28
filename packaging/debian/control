@@ -11,16 +11,18 @@ Rules-Requires-Root: no
 
 Package: cockpit-samba
 Architecture: all
+# samba is a hard dependency: every part of the page manages it, and
+# samba-common-bin carries the tools the page runs (testparm, smbpasswd,
+# pdbedit, smbstatus, smbcontrol).
 Depends: ${misc:Depends},
          cockpit-bridge,
-# The page offers to install Samba itself when it is missing, so this is a
-# weak dependency: the module is useful on a machine that does not have a
-# file server yet, and pointless on one that never will. acl provides
-# setfacl, which sharing a folder with several users needs; wsdd is what
-# makes the server visible in Windows' Network view, and the page offers
-# to install it too.
-Recommends: samba, acl
-Suggests: wsdd
+         samba,
+         samba-common-bin,
+# acl provides setfacl, which sharing a folder with several users needs;
+# wsdd answers the WS-Discovery queries that make the server visible in
+# Windows' Network view. The page works without either, so they are
+# recommendations rather than dependencies.
+Recommends: acl, wsdd
 Description: Cockpit module for managing Samba file shares
  A Cockpit page for managing Samba file shares: create and edit shares, give
  local accounts access to them, watch who is connected, and keep the server

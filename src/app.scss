@@ -31,38 +31,55 @@
 
 // PatternFly 6.5 changed the expandable-card toggle to a wide caret that
 // points down when collapsed and flips up when open. The Cockpit releases
-// this page is installed into predate that, so every other card on the
-// machine still shows a slim chevron pointing right that turns down.
-// Match the neighbours: turn the caret right for the collapsed state, and
-// redirect PatternFly's own expanded-state rotation from "flip up" to
-// "turn down". Its transition animates our angles the same as its own.
+// this page is installed into still draw the icon PatternFly 5 used: the
+// FontAwesome angle-right, a slim chevron pointing right that turns down.
+// Rotating and shrinking the caret got close but stayed visibly a
+// different glyph, so this replaces it outright: PatternFly's SVG is
+// hidden and the FontAwesome path (copied from
+// @patternfly/react-icons/angle-right-icon, viewBox 0 0 256 512) is
+// painted through a mask, in currentColor. PatternFly's own expanded
+// rotation is redirected from "flip up" to "turn down", and since it
+// animates `transform` on the same element, the turn still animates.
 // Drop all of this once the Cockpit this ships beside draws its cards
 // with the caret too.
 .ct-card {
-  --pf-v6-c-card--m-expanded__header-toggle-icon--Rotate: 0deg;
+  --pf-v6-c-card--m-expanded__header-toggle-icon--Rotate: 90deg;
 }
 
 // The Cockpit releases this page is installed into draw card borders with
 // PatternFly 5's border color; PatternFly 6 resolves ours to #e0e0e0,
 // which sits next to theirs looking mismatched. Pin the PF5 value, with
 // PF6's own dark-theme border for dark mode. The border is painted by the
-// card's ::before overlay, so that is where the color has to go.
-.ct-card.pf-v6-c-card::before {
+// card's ::before overlay, so that is where the color has to go — and only
+// for cards that have a border: a plain card (the shares table) is
+// borderless through the same variable this bypasses, so an unscoped pin
+// would put a border on it too. It did, for a while.
+.ct-card.pf-v6-c-card:not(.pf-m-plain)::before {
   border-color: #d2d2d2;
 }
 
-:where(.pf-v6-theme-dark) .ct-card.pf-v6-c-card::before {
+:where(.pf-v6-theme-dark) .ct-card.pf-v6-c-card:not(.pf-m-plain)::before {
   border-color: var(--pf-t--global--border--color--default);
 }
 
 .ct-card-expandable-header {
   .pf-v6-c-card__header-toggle-icon {
-    transform: rotate(-90deg);
+    svg {
+      display: none;
+    }
 
-    // The caret glyph nearly fills its box where the old angle icon was a
-    // narrow sliver, so at the inherited size it reads as bigger than the
-    // toggles on the rest of the machine's cards. One step down matches.
-    font-size: var(--pf-t--global--icon--size--font--xs);
+    &::before {
+      // FontAwesome's angle-right is drawn on a 256x512 grid, so the box
+      // is half as wide as it is tall; 1em tall matches what the other
+      // cards on the machine render.
+      display: inline-block;
+      content: "";
+      inline-size: 0.5em;
+      block-size: 1em;
+      vertical-align: middle;
+      background-color: currentcolor;
+      mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 512"><path d="M224.3 273l-136 136c-9.4 9.4-24.6 9.4-33.9 0l-22.6-22.6c-9.4-9.4-9.4-24.6 0-33.9l96.4-96.4-96.4-96.4c-9.4-9.4-9.4-24.6 0-33.9L54.3 103c9.4-9.4 24.6-9.4 33.9 0l136 136c9.5 9.4 9.5 24.6.1 34z"/></svg>') no-repeat center / contain;
+    }
   }
 
   // PatternFly pins the toggle to the top of the header for the sake of

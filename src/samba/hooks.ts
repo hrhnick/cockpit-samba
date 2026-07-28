@@ -145,21 +145,6 @@ export function useSambaService(): ServiceState {
     };
 }
 
-/* The WS-Discovery responder, which is what makes this server appear in
-   Windows' Network view. Same two-candidate-unit pattern as the Samba
-   service itself: whichever of wsdd and wsdd2 exists wins. */
-export interface DiscoveryState {
-    unit: string | null;
-    running: boolean;
-    /* False only once we know neither unit exists. */
-    installed: boolean | null;
-}
-
-export function useDiscoveryService(): DiscoveryState {
-    const { proxy, unit, installed } = useUnitProxy(client.DISCOVERY_UNITS);
-    return { unit, running: proxy?.state === "running", installed };
-}
-
 /* Whether anyone can see the page. cockpit.hidden covers both a
    background browser tab and the Cockpit shell showing another page,
    neither of which the document's own visibility API reports on its
