@@ -241,25 +241,33 @@ export interface PathStatus {
 export function usePathStatus(paths: string[]): {
     status: Record<string, PathStatus>, refresh: () => Promise<void>
 } {
-    /* Deduplicated: two shares can point at one folder, and the checks
-       cost a process each. A stable key, so re-rendering with an equal
-       array does not re-run them. */
+    /* Deduplicated: two shares can point at one folder. A stable key, so
+       re-rendering with an equal array does not re-run the checks. */
     const unique = [...new Set(paths.filter(Boolean))];
     const key = unique.join("\n");
 
     const load = useCallback(async () => {
-        const entries = await Promise.all(unique.map(async path => {
-            const state = await client.checkPath(path);
+        /* checkPath is a bridge channel, not a process, so per-path is
+           fine; the SELinux and disk checks each cost a process and take
+           every path in one run rather than one process per path. */
+        const states = await Promise.all(unique.map(path => client.checkPath(path)));
+        const okPaths = unique.filter((_path, i) => states[i] === "ok");
+
+        const [selinux, disks] = await Promise.all([
+            client.checkSELinuxContexts(okPaths),
+            client.diskUsage(okPaths),
+        ]);
+
+        return Object.fromEntries(unique.map((path, i) => {
+            const state = states[i];
             if (state !== "ok")
                 return [path, { state, selinuxOk: true, disk: null }] as const;
-
-            const [selinuxOk, disk] = await Promise.all([
-                client.checkSELinuxContext(path),
-                client.diskUsage(path),
-            ]);
-            return [path, { state, selinuxOk, disk }] as const;
+            return [path, {
+                state,
+                selinuxOk: selinux.get(path) ?? true,
+                disk: disks.get(path) ?? null,
+            }] as const;
         }));
-        return Object.fromEntries(entries);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [key]);
 

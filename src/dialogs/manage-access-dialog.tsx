@@ -30,17 +30,16 @@ import { fmt_to_fragments } from "utils";
 
 import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
 import { DropdownItem } from "@patternfly/react-core/dist/esm/components/Dropdown/index.js";
-import { Form } from "@patternfly/react-core/dist/esm/components/Form/index.js";
 import { Label } from "@patternfly/react-core/dist/esm/components/Label/index.js";
 import {
     Modal, ModalBody, ModalFooter, ModalHeader,
 } from "@patternfly/react-core/dist/esm/components/Modal/index.js";
-import { SearchInput } from "@patternfly/react-core/dist/esm/components/SearchInput/index.js";
 import { Toolbar, ToolbarContent, ToolbarItem } from "@patternfly/react-core/dist/esm/components/Toolbar/index.js";
-import { SearchIcon } from "@patternfly/react-icons";
 import { SortByDirection } from "@patternfly/react-table";
 
+import { DialogFrame } from "../components/dialog";
 import { ShareLabels } from "../components/labels";
+import { FilterInput, NoMatchState, useSearch } from "../components/search";
 import * as client from "../samba/client";
 import type { SambaUser } from "../samba/client";
 import { groupEntryName, isGroupEntry, type Share } from "../samba/conf";
@@ -74,10 +73,12 @@ export const ManageAccessDialog = ({ canEdit, shares }: {
 
     const [users, setUsers] = useState<SambaUser[]>([]);
     const [loading, setLoading] = useState(true);
-    const [filter, setFilter] = useState("");
     const [view, setView] = useState<View>({ name: "list" });
+    const { filter, setFilter, needle, filtered } = useSearch(users, (user, needle) =>
+        user.name.toLowerCase().includes(needle) || user.fullName.toLowerCase().includes(needle));
+    /* Failures loading the list; failures inside the password and remove
+       views are shown by their DialogFrame. */
     const [error, setError] = useState<string | null>(null);
-    const [busy, setBusy] = useState(false);
 
     const [password, setPassword] = useState("");
     const [confirm, setConfirm] = useState("");
@@ -102,19 +103,10 @@ export const ManageAccessDialog = ({ canEdit, shares }: {
         setView(next);
     }
 
-    async function attempt(action: () => Promise<void>) {
-        setBusy(true);
-        setError(null);
-        try {
-            await action();
-            await reload();
-            show({ name: "list" });
-        } catch (exception) {
-            setError(client.errorString(exception));
-        } finally {
-            setBusy(false);
-        }
-    }
+    /* The password and remove views are DialogFrames whose Cancel is
+       "Back" and whose close — dismissed or applied — returns to the
+       list rather than closing the dialog. */
+    const backToList = () => show({ name: "list" });
 
     /* --- Set or change a password --- */
 
@@ -123,39 +115,31 @@ export const ManageAccessDialog = ({ canEdit, shares }: {
         const mismatch = confirm.length > 0 && password !== confirm;
 
         return (
-            <Modal id="manage-access-dialog" isOpen position="top" variant="medium"
-                   onClose={() => Dialogs.close()}>
-                <ModalHeader title={user.hasPassword
-                    ? cockpit.format(_("Change Samba password for $0"), user.name)
-                    : cockpit.format(_("Set Samba password for $0"), user.name)}
-                             description={_("This password is only used to connect to shares. The account's login password is left alone.")} />
-                <ModalBody>
-                    {error && <ModalError dialogError={error} />}
-                    <Form onSubmit={event => event.preventDefault()}>
-                        <PasswordFormFields idPrefix="samba-password"
-                                            password_label={_("Samba password")}
-                                            password_confirm_label={_("Confirm")}
-                                            error_password_confirm={mismatch ? _("The passwords do not match") : ""}
-                                            change={(field, value) => {
-                                                if (field === "password")
-                                                    setPassword(value);
-                                                else
-                                                    setConfirm(value);
-                                            }} />
-                    </Form>
-                </ModalBody>
-                <ModalFooter>
-                    <Button variant="primary"
-                            isLoading={busy}
-                            isDisabled={busy || !password || password !== confirm}
-                            onClick={() => attempt(() => client.setPassword(user.name, password))}>
-                        {user.hasPassword ? _("Change password") : _("Set password")}
-                    </Button>
-                    <Button variant="link" isDisabled={busy} onClick={() => show({ name: "list" })}>
-                        {_("Back")}
-                    </Button>
-                </ModalFooter>
-            </Modal>
+            <DialogFrame id="manage-access-dialog"
+                         title={user.hasPassword
+                             ? cockpit.format(_("Change Samba password for $0"), user.name)
+                             : cockpit.format(_("Set Samba password for $0"), user.name)}
+                         description={_("This password is only used to connect to shares. The account's login password is left alone.")}
+                         actionLabel={user.hasPassword ? _("Change password") : _("Set password")}
+                         isActionDisabled={!password || password !== confirm}
+                         cancelLabel={_("Back")}
+                         onClose={backToList}
+                         onApply={async () => {
+                             await client.setPassword(user.name, password);
+                             await reload();
+                         }}
+                         isForm>
+                <PasswordFormFields idPrefix="samba-password"
+                                    password_label={_("Samba password")}
+                                    password_confirm_label={_("Confirm")}
+                                    error_password_confirm={mismatch ? _("The passwords do not match") : ""}
+                                    change={(field, value) => {
+                                        if (field === "password")
+                                            setPassword(value);
+                                        else
+                                            setConfirm(value);
+                                    }} />
+            </DialogFrame>
         );
     }
 
@@ -165,38 +149,28 @@ export const ManageAccessDialog = ({ canEdit, shares }: {
         const user = view.user;
 
         return (
-            <Modal id="manage-access-dialog" isOpen position="top" variant="small"
-                   onClose={() => Dialogs.close()}>
-                <ModalHeader title={cockpit.format(_("Remove Samba access for $0?"), user.name)}
-                             titleIconVariant="warning" />
-                <ModalBody>
-                    {error && <ModalError dialogError={error} />}
-                    <p>
-                        {fmt_to_fragments(
-                            _("$0 will no longer be able to connect to any share on this server. The account itself, and its ability to log in, are not affected."),
-                            <strong>{user.name}</strong>)}
-                    </p>
-                </ModalBody>
-                <ModalFooter>
-                    <Button variant="danger"
-                            isLoading={busy}
-                            isDisabled={busy}
-                            onClick={() => attempt(() => client.removePassword(user.name))}>
-                        {_("Remove access")}
-                    </Button>
-                    <Button variant="link" isDisabled={busy} onClick={() => show({ name: "list" })}>
-                        {_("Back")}
-                    </Button>
-                </ModalFooter>
-            </Modal>
+            <DialogFrame id="manage-access-dialog"
+                         variant="small"
+                         title={cockpit.format(_("Remove Samba access for $0?"), user.name)}
+                         titleIconVariant="warning"
+                         actionLabel={_("Remove access")}
+                         actionVariant="danger"
+                         cancelLabel={_("Back")}
+                         onClose={backToList}
+                         onApply={async () => {
+                             await client.removePassword(user.name);
+                             await reload();
+                         }}>
+                <p>
+                    {fmt_to_fragments(
+                        _("$0 will no longer be able to connect to any share on this server. The account itself, and its ability to log in, are not affected."),
+                        <strong>{user.name}</strong>)}
+                </p>
+            </DialogFrame>
         );
     }
 
     /* --- The list of accounts --- */
-
-    const needle = filter.trim().toLowerCase();
-    const filtered = users.filter(user =>
-        !needle || user.name.toLowerCase().includes(needle) || user.fullName.toLowerCase().includes(needle));
 
     const columns = [
         { title: _("User"), sortable: true },
@@ -261,11 +235,10 @@ export const ManageAccessDialog = ({ canEdit, shares }: {
                 <Toolbar>
                     <ToolbarContent>
                         <ToolbarItem>
-                            <SearchInput id="samba-access-filter"
+                            <FilterInput id="samba-access-filter"
                                          placeholder={_("Search for a user")}
-                                         value={filter}
-                                         onChange={(_event, value) => setFilter(value)}
-                                         onClear={() => setFilter("")} />
+                                         filter={filter}
+                                         setFilter={setFilter} />
                         </ToolbarItem>
                         <ToolbarItem align={{ md: "alignEnd" }}>
                             <Button variant="secondary" onClick={() => cockpit.jump("/users")}>
@@ -283,13 +256,7 @@ export const ManageAccessDialog = ({ canEdit, shares }: {
                               loading={loading ? _("Loading…") : ""}
                               isEmptyStateInTable={needle !== "" && filtered.length !== users.length}
                               emptyComponent={needle
-                                  ? (
-                                      <EmptyStatePanel title={_("No matching user")}
-                                                       icon={SearchIcon}
-                                                       action={_("Clear filter")}
-                                                       actionVariant="link"
-                                                       onAction={() => setFilter("")} />
-                                  )
+                                  ? <NoMatchState title={_("No matching user")} onClear={() => setFilter("")} />
                                   : (
                                       <EmptyStatePanel title={_("No user accounts")}
                                                        paragraph={_("Only accounts a person can log in with are listed here.")} />

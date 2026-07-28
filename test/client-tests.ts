@@ -18,7 +18,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-    filterWarnings, parseConnectionsJson, parseConnectionsText, permissionPlan,
+    filterWarnings, parseConnectionsJson, parseConnectionsText, parseDiskUsage,
+    parseSELinuxContexts, permissionPlan,
 } from "../src/samba/client";
 
 /* --- permissionPlan ---------------------------------------------------- */
@@ -200,4 +201,50 @@ test("the vfs_fruit mixing warning is hidden", () => {
 test("clean output produces no warnings", () => {
     assert.deepEqual(filterWarnings(""), []);
     assert.deepEqual(filterWarnings("Load smb config files from /etc/samba/smb.conf\n"), []);
+});
+
+/* --- The batched folder checks ----------------------------------------- */
+
+/* df and ls -Zd are run once for every share folder, and their lines are
+ * mapped back to paths by position — which is exactly the arithmetic
+ * that would go quietly wrong. Both parsers refuse a count mismatch
+ * outright: no answer beats a wrong answer attributed to the wrong path.
+ */
+
+test("df lines map to paths by position", () => {
+    const out = "Filesystem     1-blocks       Used  Available Capacity Mounted on\n" +
+        "/dev/sda2     1000000000  600000000  400000000      60% /\n" +
+        "/dev/My Disk  2000000000  500000000 1500000000      25% /srv\n";
+    const usage = parseDiskUsage(out, ["/srv/a", "/srv/b"]);
+    assert.deepEqual(usage.get("/srv/a"), { total: 1000000000, available: 400000000 });
+    /* A device name with a space must not shift the numbers. */
+    assert.deepEqual(usage.get("/srv/b"), { total: 2000000000, available: 1500000000 });
+});
+
+test("a df line count mismatch answers nothing rather than mislabeling", () => {
+    const out = "Filesystem     1-blocks       Used  Available Capacity Mounted on\n" +
+        "/dev/sda2     1000000000  600000000  400000000      60% /\n";
+    const usage = parseDiskUsage(out, ["/srv/a", "/srv/gone"]);
+    assert.equal(usage.get("/srv/a"), null);
+    assert.equal(usage.get("/srv/gone"), null);
+
+    assert.equal(parseDiskUsage("", ["/srv/a"]).get("/srv/a"), null);
+});
+
+test("SELinux contexts map to paths by position", () => {
+    const out = "unconfined_u:object_r:samba_share_t:s0 /srv/a\n" +
+        "unconfined_u:object_r:user_home_t:s0 /srv/b\n" +
+        "? /mnt/fat32\n";
+    const contexts = parseSELinuxContexts(out, ["/srv/a", "/srv/b", "/mnt/fat32"]);
+    assert.equal(contexts.get("/srv/a"), true);
+    assert.equal(contexts.get("/srv/b"), false);
+    /* "?" means the filesystem records no label: nothing to fix. */
+    assert.equal(contexts.get("/mnt/fat32"), true);
+});
+
+test("an ls -Z count mismatch reports nothing to fix for everything", () => {
+    const out = "unconfined_u:object_r:user_home_t:s0 /srv/a\n";
+    const contexts = parseSELinuxContexts(out, ["/srv/a", "/srv/gone"]);
+    assert.equal(contexts.get("/srv/a"), true);
+    assert.equal(contexts.get("/srv/gone"), true);
 });

@@ -33,6 +33,12 @@ export interface DialogFrameProps {
     actionLabel: string;
     actionVariant?: ButtonProps["variant"];
     isActionDisabled?: boolean;
+    /* Where dismissing and a successful apply land. By default both
+       close the dialog; a dialog that is really a view inside another
+       one (Manage access) goes back to that view instead, usually with
+       cancelLabel "Back". */
+    onClose?: () => void;
+    cancelLabel?: string;
     /* Extra footer buttons, placed before the primary action. */
     secondaryActions?: React.ReactNode;
     /* Wrap the body in a <Form>, so that pressing Enter in a field
@@ -50,20 +56,24 @@ export interface DialogFrameProps {
 export const DialogFrame = ({
     title, titleIconVariant, description, variant = "medium", id,
     onApply, actionLabel, actionVariant = "primary", isActionDisabled = false,
+    onClose, cancelLabel,
     secondaryActions, isForm = false, isHorizontal = false, children,
 }: DialogFrameProps) => {
     const Dialogs = useDialogs();
     const [error, setError] = useState<string | null>(null);
     const [applying, setApplying] = useState(false);
 
+    const close = onClose ?? (() => Dialogs.close());
+
     async function apply() {
         setApplying(true);
         setError(null);
         try {
             await onApply();
-            /* Closing unmounts this component, so no state is touched
-               after a successful apply. */
-            Dialogs.close();
+            /* Closing (or switching back to the enclosing view) unmounts
+               this component, so no state is touched after a successful
+               apply. */
+            close();
         } catch (exception) {
             setError(errorString(exception));
             setApplying(false);
@@ -78,7 +88,7 @@ export const DialogFrame = ({
     );
 
     return (
-        <Modal id={id} isOpen position="top" variant={variant} onClose={() => Dialogs.close()}>
+        <Modal id={id} isOpen position="top" variant={variant} onClose={close}>
             <ModalHeader title={title} description={description}
                 {...titleIconVariant && { titleIconVariant }} />
             <ModalBody>
@@ -99,8 +109,8 @@ export const DialogFrame = ({
                         onClick={apply}>
                     {actionLabel}
                 </Button>
-                <Button variant="link" isDisabled={applying} onClick={() => Dialogs.close()}>
-                    {_("Cancel")}
+                <Button variant="link" isDisabled={applying} onClick={close}>
+                    {cancelLabel ?? _("Cancel")}
                 </Button>
             </ModalFooter>
         </Modal>
