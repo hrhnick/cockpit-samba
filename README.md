@@ -163,7 +163,3 @@ against the branch by hand before merging.
 
 There are no translations. `po/` is created by the Makefile when it is needed;
 adding a `.po` file there is all that is required to start one.
-
-## License
-
-LGPL-2.1-or-later

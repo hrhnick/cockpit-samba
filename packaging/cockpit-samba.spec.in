@@ -72,8 +72,8 @@ find %{buildroot}%{_datadir}/cockpit/ -name '*.map' | xargs --no-run-if-empty rm
 %check
 appstream-util validate-relax --nonet %{buildroot}/%{_datadir}/metainfo/*
 
-# this can't be meaningfully tested during package build; tests happen through
-# FMF (see plans/all.fmf) during package gating
+# The page cannot be meaningfully exercised during a package build; the
+# browser tests need a running VM (`make check` in the source tree).
 
 %files
 %doc README.md
