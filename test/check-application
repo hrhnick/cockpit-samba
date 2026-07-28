@@ -251,13 +251,14 @@ class TestApplication(testlib.MachineCase):
         self.login_and_go("/samba")
         b.wait_in_text("#samba-shares-list", "permshare")
 
+        # The option lives in Edit share, off by default so that saving an
+        # unrelated change does not take over a hand-permissioned folder
         b.click("#samba-shares-list tr:contains('permshare') .pf-v6-c-menu-toggle")
-        b.click(".pf-v6-c-menu button:contains('Fix folder permissions')")
-        b.wait_visible("#fix-permissions-dialog")
-        # It says what it is about to do before doing it
-        b.wait_in_text("#fix-permissions-dialog", "owned by admin")
-        b.click("#fix-permissions-dialog button:contains('Apply permissions')")
-        b.wait_not_present("#fix-permissions-dialog")
+        b.click(".pf-v6-c-menu button:contains('Edit share')")
+        b.wait_visible("#share-fix-permissions:not(:checked)")
+        b.set_checked("#share-fix-permissions", True)
+        b.click("#share-dialog button:contains('Save')")
+        b.wait_not_present("#share-dialog")
 
         self.assertEqual(m.execute("stat -c %U /tmp/permshare").strip(), "admin")
 
@@ -274,15 +275,8 @@ class TestApplication(testlib.MachineCase):
         self.login_and_go("/samba")
         b.wait_in_text("#samba-shares-list", "etcshare")
 
-        b.click("#samba-shares-list tr:contains('etcshare') .pf-v6-c-menu-toggle")
-        b.click(".pf-v6-c-menu button:contains('Fix folder permissions')")
-        b.wait_visible("#fix-permissions-dialog")
-        b.wait_in_text("#fix-permissions-dialog", "belongs to the operating system")
-        b.wait_visible("#fix-permissions-dialog button:contains('Apply permissions'):disabled")
-        b.click("#fix-permissions-dialog button:contains('Cancel')")
-        b.wait_not_present("#fix-permissions-dialog")
-
-        # Editing does not offer to take the folder over either
+        # Editing explains the refusal and does not offer the folder's
+        # permissions at all
         b.click("#samba-shares-list tr:contains('etcshare') .pf-v6-c-menu-toggle")
         b.click(".pf-v6-c-menu button:contains('Edit share')")
         b.wait_visible("#share-dialog")

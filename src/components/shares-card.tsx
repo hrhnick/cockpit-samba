@@ -26,13 +26,13 @@ import { SortByDirection } from "@patternfly/react-table";
 
 import { ShareDialog } from "../dialogs/share-dialog";
 import {
-    CreateDirectoryDialog, DeleteShareDialog, FixPermissionsDialog, FixSELinuxDialog,
+    CreateDirectoryDialog, DeleteShareDialog, FixSELinuxDialog,
     PROBLEM_SUMMARY, shareProblem,
 } from "../dialogs/share-actions";
 import { ShareDetailsDialog } from "../dialogs/share-details-dialog";
 import type { Connection } from "../samba/client";
 import type { PathStatus } from "../samba/hooks";
-import { sharePrincipals, type SambaConf, type Share } from "../samba/conf";
+import type { SambaConf, Share } from "../samba/conf";
 
 const _ = cockpit.gettext;
 
@@ -92,16 +92,6 @@ const ShareActions = ({
                               onClick={() => Dialogs.show(
                                   <FixSELinuxDialog share={share} onDone={onPathsChanged} />)}>
                     {_("Allow Samba to use the folder")}
-                </DropdownItem>);
-
-        /* Only worth offering where there is a folder to fix and accounts
-           to grant it to. */
-        if (!share.isSpecial && share.path && sharePrincipals(share).length > 0)
-            items.push(
-                <DropdownItem key="permissions"
-                              onClick={() => Dialogs.show(
-                                  <FixPermissionsDialog share={share} onDone={onPathsChanged} />)}>
-                    {_("Fix folder permissions")}
                 </DropdownItem>);
 
         items.push(
