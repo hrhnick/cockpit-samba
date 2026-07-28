@@ -131,7 +131,7 @@ export const ServiceCard = ({
 
     function discoveryHelp(): string {
         if (discoveryUnavailable)
-            return _("Windows computers find servers with WS-Discovery, which Samba does not answer. None of this machine's software repositories carry the wsdd service that answers it, so the share has to be opened by name from Windows, or wsdd installed by hand.");
+            return _("Windows computers find servers with WS-Discovery, which Samba does not answer. Neither wsdd nor wsdd2, which do answer it, is offered by this machine's software repositories — package lists that have not been refreshed in a while are worth checking first. Shares still work when opened by name, as \\\\server\\share.");
         if (discovery.installed === false)
             return _("Lets Windows computers find this server in their Network view. Turning it on installs the wsdd service.");
         return _("Lets Windows computers find this server in their Network view.");
