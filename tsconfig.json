@@ -35,6 +35,8 @@
     },
     "include": [
         "src/**/*",
-        "test/unit-tests.ts"
+        "test/unit-tests.ts",
+        "test/client-tests.ts",
+        "test/dialog-tests.tsx"
     ],
 }

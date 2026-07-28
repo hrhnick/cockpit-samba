@@ -15,9 +15,33 @@ import { ConfirmDialog, DialogFrame } from "../components/dialog";
 import { useAlerts, type AlertRequest } from "../components/alerts";
 import * as client from "../samba/client";
 import { isProtectedPath, normalizePath } from "../samba/paths";
+import type { PathStatus } from "../samba/hooks";
 import { removeSection, sharePrincipals, type SambaConf, type Share } from "../samba/conf";
 
 const _ = cockpit.gettext;
+
+/* Why a share cannot currently serve its folder. Detected here, beside
+   the dialogs that fix each one; the shares table shows it as an icon in
+   the folder column and offers the matching fix in the row's menu. */
+export type Problem = "missing" | "not-a-directory" | "selinux" | null;
+
+export function shareProblem(share: Share, status: PathStatus | undefined): Problem {
+    if (share.isSpecial || !share.path || !status)
+        return null;
+    if (status.state === "missing")
+        return "missing";
+    if (status.state === "not-a-directory")
+        return "not-a-directory";
+    if (!status.selinuxOk)
+        return "selinux";
+    return null;
+}
+
+export const PROBLEM_SUMMARY: Record<Exclude<Problem, null>, () => string> = {
+    missing: () => _("The folder does not exist"),
+    "not-a-directory": () => _("The path is not a folder"),
+    selinux: () => _("SELinux is blocking access to the folder"),
+};
 
 /* setfacl comes from the acl package, which Debian and its derivatives do
    not install by default. Without it a share for several users falls back
