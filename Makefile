@@ -85,6 +85,11 @@ $(SPEC): packaging/$(SPEC).in $(DIST_TEST)
 packaging/arch/PKGBUILD: packaging/arch/PKGBUILD.in
 	sed 's/VERSION/$(VERSION)/; s/SOURCE/$(TARFILE)/' $< > $@
 
+# Dated from the last commit rather than "now", so that rebuilding the same
+# commit produces the same changelog.
+packaging/debian/changelog: packaging/debian/changelog.in
+	sed 's/VERSION/$(VERSION)/; s/DATE/$(shell date -R -d @$$(git show --no-patch --format=%at))/' $< > $@
+
 $(DIST_TEST): $(NODE_MODULES_TEST) $(COCKPIT_REPO_STAMP) $(shell find src/ -type f) package.json build.js
 	NODE_ENV=$(NODE_ENV) ./build.js
 
@@ -93,7 +98,8 @@ watch: $(NODE_MODULES_TEST) $(COCKPIT_REPO_STAMP)
 
 clean:
 	rm -rf dist/
-	rm -f $(SPEC) packaging/arch/PKGBUILD
+	rm -f $(SPEC) packaging/arch/PKGBUILD packaging/debian/changelog
+	rm -f *.deb
 	rm -f po/LINGUAS
 	rm -f metafile.json runtime-npm-modules.txt
 
@@ -126,12 +132,12 @@ dist: $(TARFILE)
 # pre-built dist/ (so it's not necessary) and ship package-lock.json (so that
 # node_modules/ can be reconstructed if necessary)
 $(TARFILE): export NODE_ENV=production
-$(TARFILE): $(DIST_TEST) $(SPEC) packaging/arch/PKGBUILD
+$(TARFILE): $(DIST_TEST) $(SPEC) packaging/arch/PKGBUILD packaging/debian/changelog
 	if type appstream-util >/dev/null 2>&1; then appstream-util validate-relax --nonet *.metainfo.xml; fi
 	tar --xz $(TAR_ARGS) -cf $(TARFILE) --transform 's,^,$(RPM_NAME)/,' \
 		--exclude packaging/$(SPEC).in --exclude node_modules \
 		$$(git ls-files) $(COCKPIT_REPO_FILES) $(NODE_MODULES_TEST) $(DIST_TEST) \
-		$(SPEC) packaging/arch/PKGBUILD dist/
+		$(SPEC) packaging/arch/PKGBUILD packaging/debian/changelog dist/
 
 $(NODE_CACHE): $(NODE_MODULES_TEST)
 	tools/node-modules runtime-tar $(NODE_CACHE)
@@ -160,6 +166,19 @@ rpm: $(TARFILE) $(NODE_CACHE) $(SPEC)
 	find `pwd`/output -name '*.rpm' -printf '%f\n' -exec mv {} . \;
 	rm -r "`pwd`/rpmbuild"
 	rm -r "`pwd`/output" "`pwd`/build"
+
+# convenience target for developers: build a .deb from the release tarball,
+# which is the same source a distribution would build from
+deb: $(TARFILE)
+	rm -rf tmp/deb
+	mkdir -p tmp/deb
+	tar -C tmp/deb -xf $(TARFILE)
+	mv tmp/deb/$(RPM_NAME)/packaging/debian tmp/deb/$(RPM_NAME)/debian
+	rm -f tmp/deb/$(RPM_NAME)/debian/changelog.in
+	cd tmp/deb/$(RPM_NAME) && dpkg-buildpackage --build=binary --no-sign
+	mv tmp/deb/*.deb .
+	rm -rf tmp/deb
+	@ls -1 *.deb
 
 # build a VM with locally built distro pkgs installed
 # disable networking, VM images have mock/pbuilder with the common build dependencies pre-installed

@@ -1,0 +1,32 @@
+Source: cockpit-samba
+Section: admin
+Priority: optional
+Maintainer: Nick Bonczyk <hrhnick@hrhnick.com>
+Build-Depends: debhelper-compat (= 13),
+               gettext,
+               make,
+Standards-Version: 4.6.2
+Homepage: https://github.com/hrhnick/cockpit-samba
+Rules-Requires-Root: no
+
+Package: cockpit-samba
+Architecture: all
+Depends: ${misc:Depends},
+         cockpit-bridge,
+# The page offers to install Samba itself when it is missing, so this is a
+# weak dependency: the module is useful on a machine that does not have a
+# file server yet, and pointless on one that never will.
+Recommends: samba
+Description: Cockpit module for managing Samba file shares
+ A Cockpit page for managing Samba file shares: create and edit shares, give
+ local accounts access to them, watch who is connected, and keep the server
+ configuration in order, without leaving the web console.
+ .
+ Shares can be made read-only or read-write, hidden from browsing, opened to
+ guests, or restricted to particular users and groups. A share whose folder is
+ missing, or which SELinux is blocking, is detected and can be fixed from the
+ page.
+ .
+ Changes are checked with testparm before they are written, the previous
+ configuration is kept as a backup, and comments and settings the page does not
+ manage are left untouched.
