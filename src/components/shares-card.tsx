@@ -169,7 +169,7 @@ export const SharesCard = ({
             <Flex spaceItems={{ default: "spaceItemsSm" }} alignItems={{ default: "alignItemsCenter" }}>
                 {share.path
                     ? <code>{share.path}</code>
-                    : <span className="pf-v6-u-color-200">{_("Managed by Samba")}</span>}
+                    : <span className="samba-subtle">{_("Managed by Samba")}</span>}
                 {problem && (
                     <Tooltip content={PROBLEM_SUMMARY[problem]()}>
                         <Icon status={problem === "selinux" ? "warning" : "danger"}

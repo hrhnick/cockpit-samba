@@ -66,7 +66,7 @@ Reload the browser and the page appears under *Samba shares*.
 - Detects a share whose folder is missing or which SELinux is blocking, and
   offers to fix either
 
-**Access**
+**Access** — *Manage access*, in the server card's menu
 
 - Give a local account a Samba password, change it, or take its access away
 - See at a glance which accounts can connect
@@ -114,7 +114,7 @@ Then open Cockpit at `https://localhost:9090` and go to *Samba shares*.
 Checks:
 
 ```sh
-npm test              # unit tests for the smb.conf model
+npm test              # smb.conf model, and every dialog mounts
 npm run typecheck     # tsc
 npm run eslint
 npm run stylelint

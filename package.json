@@ -13,7 +13,7 @@
   "scripts": {
     "watch": "ESBUILD_WATCH='true' ./build.js",
     "build": "./build.js",
-    "test": "./test/run-unit-tests.js",
+    "test": "./test/run-unit-tests.js && ./test/run-dialog-tests.js",
     "typecheck": "tsc",
     "eslint": "eslint src/ test/*.ts test/*.js",
     "eslint:fix": "eslint --fix src/ test/*.ts test/*.js",
@@ -38,6 +38,7 @@
     "eslint-plugin-promise": "6.6.0",
     "eslint-plugin-react": "7.37.5",
     "eslint-plugin-react-hooks": "4.6.2",
+    "jsdom": "30.0.0",
     "stylelint": "17.13.0",
     "stylelint-config-recommended-scss": "17.0.1",
     "stylelint-config-standard": "40.0.0",

@@ -15,7 +15,6 @@ import { Stack } from "@patternfly/react-core/dist/esm/layouts/Stack/index.js";
 import { NetworkIcon } from "@patternfly/react-icons";
 
 import { ServiceCard } from "./components/service-card";
-import { AccessCard } from "./components/access-card";
 import { SharesCard } from "./components/shares-card";
 import * as client from "./samba/client";
 import {
@@ -41,17 +40,12 @@ export const Application = () => {
 
     const [installing, setInstalling] = useState(false);
     const [serviceExpanded, setServiceExpanded] = useState(false);
-    const [accessExpanded, setAccessExpanded] = useState(false);
 
     const isRunning = service.state === "running";
 
     const loadConnections = useCallback(() => client.getConnections(), []);
     const { value: connections, refresh: refreshConnections, refreshing } =
         usePolled<client.Connection[]>(loadConnections, [], isRunning, CONNECTION_POLL_SECONDS);
-
-    const loadUsers = useCallback(() => client.listUsers(), []);
-    const { value: users, refresh: refreshUsers, loaded: usersLoaded } =
-        usePolled<client.SambaUser[]>(loadUsers, [], service.installed === true);
 
     const shares = conf ? readShares(conf) : [];
     const { status: pathStatus, refresh: refreshPaths } = usePathStatus(shares.map(s => s.path));
@@ -125,13 +119,6 @@ export const Application = () => {
                                      isExpanded={serviceExpanded}
                                      setExpanded={setServiceExpanded} />
                     )}
-
-                    <AccessCard users={users}
-                                isLoading={!usersLoaded}
-                                reload={refreshUsers}
-                                canEdit={canEdit}
-                                isExpanded={accessExpanded}
-                                setExpanded={setAccessExpanded} />
 
                     <SharesCard shares={shares}
                                 pathStatus={pathStatus}

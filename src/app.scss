@@ -10,13 +10,26 @@
 @use "page.scss";
 @use "ct-card.scss";
 
+// PatternFly ships the pf-v6-u-* utility classes in separate stylesheets
+// that nothing else pulls in, so a page that uses them has to ask for them
+// by hand — Cockpit's own pages do the same. Without this, every utility
+// class silently does nothing.
+@use "@patternfly/patternfly/utilities/Spacing/spacing.scss";
+
 // The shared components from pkg/lib import their own stylesheets, so
 // there is nothing to pull in for them here.
 
 // Everything below is specific to this page. There is deliberately very
-// little of it: PatternFly's own components and utility classes cover the
-// layout, and anything fixed here instead of upstream tends to drift out
-// of step with the rest of Cockpit.
+// little of it: PatternFly's own components cover the layout, and anything
+// fixed here instead of upstream tends to drift out of step with the rest
+// of Cockpit.
+
+// Secondary text, for a value that is absent or supplied by Samba rather
+// than configured. PatternFly documents pf-v6-u-color-200 for this but does
+// not ship it in any stylesheet.
+.samba-subtle {
+  color: var(--pf-t--global--text--color--subtle);
+}
 
 // The refresh control spins while connections are being re-read.
 @keyframes samba-spin {

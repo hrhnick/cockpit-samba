@@ -11,10 +11,9 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 
 import { superuser } from "superuser";
-import { WithDialogs } from "dialogs";
 
 import { Application } from "./app";
-import { WithAlerts } from "./components/alerts";
+import { Providers } from "./components/providers";
 
 /* Gaining or losing administrative access changes what the whole page may
    do, so start over rather than trying to reconcile it in place. */
@@ -26,11 +25,9 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
 
     createRoot(container).render(
-        <WithDialogs>
-            <WithAlerts>
-                <Application />
-            </WithAlerts>
-        </WithDialogs>);
+        <Providers>
+            <Application />
+        </Providers>);
 
     document.body.removeAttribute("hidden");
 });
