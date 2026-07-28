@@ -15,6 +15,25 @@ console.
 
 If Samba is not installed, the page offers to install it through PackageKit.
 
+## Installing
+
+Packages for each release are attached to it on the [releases
+page](https://github.com/hrhnick/cockpit-samba/releases): an RPM, a Debian
+package, and a source tarball.
+
+On a distribution without a package, use the zip, which unpacks to a single
+`samba` directory:
+
+```sh
+# for everyone on the machine
+sudo unzip cockpit-samba-VERSION.zip -d /usr/share/cockpit/
+
+# or for the current user only
+unzip cockpit-samba-VERSION.zip -d ~/.local/share/cockpit/
+```
+
+Reload the browser and the page appears under *Samba shares*.
+
 ## Features
 
 **Shares**

@@ -7,6 +7,7 @@ TEST_OS = centos-9-stream
 endif
 export TEST_OS
 TARFILE=$(RPM_NAME)-$(VERSION).tar.xz
+ZIPFILE=$(RPM_NAME)-$(VERSION).zip
 NODE_CACHE=$(RPM_NAME)-node-$(VERSION).tar.xz
 SPEC=$(RPM_NAME).spec
 PREFIX ?= /usr/local
@@ -99,7 +100,7 @@ watch: $(NODE_MODULES_TEST) $(COCKPIT_REPO_STAMP)
 clean:
 	rm -rf dist/
 	rm -f $(SPEC) packaging/arch/PKGBUILD packaging/debian/changelog
-	rm -f *.deb
+	rm -f *.deb *.zip
 	rm -f po/LINGUAS
 	rm -f metafile.json runtime-npm-modules.txt
 
@@ -166,6 +167,22 @@ rpm: $(TARFILE) $(NODE_CACHE) $(SPEC)
 	find `pwd`/output -name '*.rpm' -printf '%f\n' -exec mv {} . \;
 	rm -r "`pwd`/rpmbuild"
 	rm -r "`pwd`/output" "`pwd`/build"
+
+# A zip of the built page, for installing by hand on a distribution we do not
+# package for. It unpacks to a single "samba" directory, so extracting it into
+# /usr/share/cockpit (system wide) or ~/.local/share/cockpit (one user) is the
+# whole installation. python3's zipfile is used rather than zip(1), which is
+# not installed everywhere this runs.
+$(ZIPFILE): $(DIST_TEST)
+	rm -f $@
+	rm -rf tmp/zip
+	mkdir -p tmp/zip
+	cp -r dist tmp/zip/$(PACKAGE_NAME)
+	cd tmp/zip && python3 -m zipfile -c $(CURDIR)/$@ $(PACKAGE_NAME)
+	rm -rf tmp/zip
+	@ls -1 $@
+
+zip: $(ZIPFILE)
 
 # convenience target for developers: build a .deb from the release tarball,
 # which is the same source a distribution would build from

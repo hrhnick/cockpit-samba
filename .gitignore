@@ -9,6 +9,7 @@
 *.deb
 *.pyc
 *.rpm
+*.zip
 
 # toplevel (/...)
 /.claude/
