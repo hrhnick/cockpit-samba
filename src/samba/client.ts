@@ -27,7 +27,7 @@ import { fcontextPattern, isProtectedPath, normalizePath } from "./paths";
 const _ = cockpit.gettext;
 
 export const SMB_CONF = "/etc/samba/smb.conf";
-export const SMB_CONF_BACKUP = SMB_CONF + ".bak";
+const SMB_CONF_BACKUP = SMB_CONF + ".bak";
 
 /* systemd calls the Samba file server smb.service on Red Hat family
    distributions and smbd.service on Debian family ones. */
@@ -452,6 +452,22 @@ async function passwdEntries(): Promise<PasswdEntry[]> {
             }));
 }
 
+interface GroupEntry {
+    name: string;
+    gid: number;
+    members: string[];
+}
+
+async function groupEntries(): Promise<GroupEntry[]> {
+    return (await getent("group"))
+            .filter(parts => parts.length >= 3)
+            .map(parts => ({
+                name: parts[0],
+                gid: parseInt(parts[2], 10),
+                members: (parts[3] ?? "").split(",").filter(Boolean),
+            }));
+}
+
 /* An account a person logs in with, as opposed to a system account.
    The UID range comes from login.defs so that machines which moved
    UID_MIN off the default are handled correctly. */
@@ -491,20 +507,16 @@ async function sambaAccountNames(): Promise<Set<string>> {
 
 export async function listUsers(): Promise<SambaUser[]> {
     const [entries, range, sambaNames, groups] = await Promise.all([
-        passwdEntries(), loginUidRange(), sambaAccountNames(), getent("group"),
+        passwdEntries(), loginUidRange(), sambaAccountNames(), groupEntries(),
     ]);
 
     /* Group membership from both directions: the account's primary GID,
        and the member lists of the other groups. */
-    const byGid = new Map<number, string>();
+    const byGid = new Map(groups.map(group => [group.gid, group.name]));
     const memberships = new Map<string, string[]>();
-    for (const parts of groups) {
-        if (parts.length < 3)
-            continue;
-        byGid.set(parseInt(parts[2], 10), parts[0]);
-        for (const member of (parts[3] ?? "").split(",").filter(Boolean))
-            memberships.set(member, [...(memberships.get(member) ?? []), parts[0]]);
-    }
+    for (const group of groups)
+        for (const member of group.members)
+            memberships.set(member, [...(memberships.get(member) ?? []), group.name]);
 
     return entries
             .filter(entry => entry.uid >= range.min && entry.uid <= range.max && isLoginShell(entry.shell))
@@ -547,7 +559,7 @@ export async function listUserGroupSuggestions(): Promise<string[]> {
     const NOISE = new Set(["nobody", "nogroup"]);
     const ADMIN_GROUPS = new Set(["wheel", "sudo", "admin", "adm"]);
 
-    const [entries, groups] = await Promise.all([passwdEntries(), getent("group")]);
+    const [entries, groups] = await Promise.all([passwdEntries(), groupEntries()]);
 
     const users: string[] = [];
     const names = new Set<string>();
@@ -564,13 +576,7 @@ export async function listUserGroupSuggestions(): Promise<string[]> {
     }
 
     const groupNames: string[] = [];
-    for (const parts of groups) {
-        if (parts.length < 3)
-            continue;
-        const name = parts[0];
-        const gid = parseInt(parts[2], 10);
-        const members = parts[3] ? parts[3].split(",").filter(Boolean) : [];
-
+    for (const { name, gid, members } of groups) {
         if (isDynamic(gid) || NOISE.has(name))
             continue;
         if (members.some(m => names.has(m)) || primaryGids.has(gid) || ADMIN_GROUPS.has(name))
@@ -611,25 +617,45 @@ export interface DiskUsage {
     available: number;
 }
 
-/* How much room the share has left. Null when it could not be
- * determined, which the caller reports as nothing rather than as zero.
+/* How much room each share has left, in one df run for every path
+ * rather than one per path — the answers are refreshed together, and on
+ * the small machines this runs on the processes are the expensive part.
  *
  * -P is the POSIX single-line-per-filesystem format, so a long device
- * name cannot wrap and shift the columns; -B1 asks for bytes.
+ * name cannot wrap and shift the columns; -B1 asks for bytes. Null for
+ * a path whose answer could not be read, which the caller reports as
+ * nothing rather than as zero.
  */
-export async function diskUsage(path: string): Promise<DiskUsage | null> {
-    const out = await runParsed(["df", "-B1", "-P", "--", path]).catch(() => "");
-    const lines = out.trim().split("\n");
-    if (lines.length < 2)
-        return null;
+export async function diskUsage(paths: string[]): Promise<Map<string, DiskUsage | null>> {
+    if (paths.length === 0)
+        return new Map();
+    const out = await runParsed(["df", "-B1", "-P", "--", ...paths]).catch(() => "");
+    return parseDiskUsage(out, paths);
+}
 
-    /* Matched from the right, because the device name in the first
-       column may itself contain spaces. */
-    const fields = /\s(\d+)\s+(\d+)\s+(\d+)\s+\d+%\s/.exec(lines[lines.length - 1]);
-    if (!fields)
-        return null;
+/* Pure, exported for the unit tests. df prints one line per operand in
+   operand order, but the line names the filesystem and mount point, not
+   the operand — so the mapping is positional, and a missing line (a
+   path that vanished since it was checked) would shift every mapping
+   after it. The count check turns that into "no answer" rather than
+   into wrong answers. */
+export function parseDiskUsage(out: string, paths: string[]): Map<string, DiskUsage | null> {
+    const result = new Map<string, DiskUsage | null>(paths.map(path => [path, null]));
 
-    return { total: parseInt(fields[1], 10), available: parseInt(fields[3], 10) };
+    /* Drop the header; blank lines would break the positional mapping,
+       and df does not produce them. */
+    const lines = out.split("\n").filter(line => line.trim()).slice(1);
+    if (lines.length !== paths.length)
+        return result;
+
+    lines.forEach((line, i) => {
+        /* Matched from the right, because the device name in the first
+           column may itself contain spaces. */
+        const fields = /\s(\d+)\s+(\d+)\s+(\d+)\s+\d+%\s/.exec(line);
+        if (fields)
+            result.set(paths[i], { total: parseInt(fields[1], 10), available: parseInt(fields[3], 10) });
+    });
+    return result;
 }
 
 /* Give the share's users access to the directory on the filesystem.
@@ -745,25 +771,41 @@ export function isSELinuxEnabled(): Promise<boolean> {
     return selinux_enabled;
 }
 
-/* Whether Samba is allowed to serve files from this path. Returns true
-   when there is nothing to fix, including when we could not tell. */
-export async function checkSELinuxContext(path: string): Promise<boolean> {
-    if (!path.trim() || path.trim() === "/")
-        return true;
-    if (!await isSELinuxEnabled())
-        return true;
+/* Whether Samba is allowed to serve files from each path, in one
+   `ls -Zd` run for the lot rather than one per path. True means nothing
+   to fix, including when we could not tell. */
+export async function checkSELinuxContexts(paths: string[]): Promise<Map<string, boolean>> {
+    const result = new Map<string, boolean>(paths.map(path => [path, true]));
 
-    try {
-        const out = await runParsed(["ls", "-Zd", "--", path]);
+    const checkable = paths.filter(path => path.trim() && path.trim() !== "/");
+    if (checkable.length === 0 || !await isSELinuxEnabled())
+        return result;
+
+    const out = await runParsed(["ls", "-Zd", "--", ...checkable]).catch(() => "");
+    for (const [path, ok] of parseSELinuxContexts(out, checkable))
+        result.set(path, ok);
+    return result;
+}
+
+/* Pure, exported for the unit tests. ls prints one line per path in
+   argument order; as with df, the mapping is positional and a count
+   mismatch means "could not tell" for everything rather than the wrong
+   answer for something. */
+export function parseSELinuxContexts(out: string, paths: string[]): Map<string, boolean> {
+    const result = new Map<string, boolean>(paths.map(path => [path, true]));
+
+    const lines = out.split("\n").filter(line => line.trim());
+    if (lines.length !== paths.length)
+        return result;
+
+    lines.forEach((line, i) => {
         /* A leading "?" means no context is recorded, e.g. on a
            filesystem that does not support labels. */
-        if (out.trim().startsWith("?"))
-            return true;
-        return out.includes("samba_share_t") || out.includes("public_content_t") ||
-               out.includes("public_content_rw_t");
-    } catch {
-        return true;
-    }
+        if (line.trim().startsWith("?"))
+            return;
+        result.set(paths[i], /samba_share_t|public_content(_rw)?_t/.test(line));
+    });
+    return result;
 }
 
 export async function fixSELinuxContext(path: string): Promise<void> {

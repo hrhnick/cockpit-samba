@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-import React, { useState } from "react";
+import React from "react";
 
 import cockpit from "cockpit";
 import { useDialogs } from "dialogs";
@@ -17,13 +17,13 @@ import { Divider } from "@patternfly/react-core/dist/esm/components/Divider/inde
 import { DropdownItem } from "@patternfly/react-core/dist/esm/components/Dropdown/index.js";
 import { Icon } from "@patternfly/react-core/dist/esm/components/Icon/index.js";
 import { Label } from "@patternfly/react-core/dist/esm/components/Label/index.js";
-import { SearchInput } from "@patternfly/react-core/dist/esm/components/SearchInput/index.js";
 import { Toolbar, ToolbarContent, ToolbarItem } from "@patternfly/react-core/dist/esm/components/Toolbar/index.js";
 import { Tooltip } from "@patternfly/react-core/dist/esm/components/Tooltip/index.js";
 import { Flex } from "@patternfly/react-core/dist/esm/layouts/Flex/index.js";
-import { ExclamationCircleIcon, ExclamationTriangleIcon, FolderIcon, SearchIcon } from "@patternfly/react-icons";
+import { ExclamationCircleIcon, ExclamationTriangleIcon, FolderIcon } from "@patternfly/react-icons";
 import { SortByDirection } from "@patternfly/react-table";
 
+import { FilterInput, NoMatchState, useSearch } from "./search";
 import { ShareDialog } from "../dialogs/share-dialog";
 import {
     CreateDirectoryDialog, DeleteShareDialog, FixSELinuxDialog,
@@ -124,11 +124,7 @@ export const SharesCard = ({
     applyConf, onPathsChanged, canEdit,
 }: SharesCardProps) => {
     const Dialogs = useDialogs();
-    const [filter, setFilter] = useState("");
-
-    const needle = filter.trim().toLowerCase();
-    const filtered = shares.filter(share =>
-        !needle ||
+    const { filter, setFilter, needle, filtered } = useSearch(shares, (share, needle) =>
         share.name.toLowerCase().includes(needle) ||
         share.comment.toLowerCase().includes(needle) ||
         share.path.toLowerCase().includes(needle));
@@ -203,11 +199,10 @@ export const SharesCard = ({
         <Toolbar>
             <ToolbarContent>
                 <ToolbarItem>
-                    <SearchInput id="samba-shares-filter"
+                    <FilterInput id="samba-shares-filter"
                                  placeholder={_("Search for a share")}
-                                 value={filter}
-                                 onChange={(_event, value) => setFilter(value)}
-                                 onClear={() => setFilter("")} />
+                                 filter={filter}
+                                 setFilter={setFilter} />
                 </ToolbarItem>
                 {canEdit && (
                     <>
@@ -242,13 +237,7 @@ export const SharesCard = ({
                           sortBy={{ index: 0, direction: SortByDirection.asc }}
                           isEmptyStateInTable={needle !== "" && filtered.length !== shares.length}
                           emptyComponent={needle
-                              ? (
-                                  <EmptyStatePanel title={_("No matching share")}
-                                                   icon={SearchIcon}
-                                                   action={_("Clear filter")}
-                                                   actionVariant="link"
-                                                   onAction={() => setFilter("")} />
-                              )
+                              ? <NoMatchState title={_("No matching share")} onClear={() => setFilter("")} />
                               : (
                                   <EmptyStatePanel title={_("No shares yet")}
                                                    icon={FolderIcon}
