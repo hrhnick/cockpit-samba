@@ -1,21 +1,22 @@
 <!DOCTYPE html>
-<html lang="en">
+<!--
+Copyright (C) 2026 cockpit-samba contributors
+SPDX-License-Identifier: LGPL-2.1-or-later
+-->
+<html id="samba-page">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Samba Manager</title>
-
-    <!-- 1. Load the compiled CSS extracted by esbuild -->
-    <link href="index.css" rel="stylesheet">
-
-    <!-- 2. Load the Cockpit API Bridge -->
+    <title translate="yes">Samba shares</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link href="index.css" type="text/css" rel="stylesheet" />
+    <link href="../../static/branding.css" rel="stylesheet" />
     <script src="../base1/cockpit.js"></script>
-</head>
-<body>
-    <!-- React will mount the application here -->
-    <div id="app"></div>
-
-    <!-- The build script will inject the compiled React bundle here -->
+    <script src="../base1/po.js"></script>
+    <script src="po.js"></script>
     <script src="index.js"></script>
+</head>
+<!-- hidden until React has rendered, so the page does not flash empty -->
+<body class="pf-v6-m-tabular-nums" hidden>
+    <div class="ct-page-fill" id="page"></div>
 </body>
 </html>

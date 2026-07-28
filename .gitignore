@@ -5,6 +5,7 @@
 #  - patterns to match files in subdirs
 
 # general patterns
+*.DS_Store
 *.pyc
 *.rpm
 
@@ -27,6 +28,7 @@
 /runtime-npm-modules.txt
 /tmp/
 /tools/
+/tsconfig.tsbuildinfo
 
 # subdirs (/subdir/...)
 /packaging/arch/PKGBUILD

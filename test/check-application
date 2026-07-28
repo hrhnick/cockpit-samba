@@ -12,54 +12,141 @@ import testlib
 # way that influences other tests.
 @testlib.nondestructive
 class TestApplication(testlib.MachineCase):
-    def testBasic(self):
+    def setUp(self):
+        super().setUp()
+
+        # The page can install Samba itself, so the module does not hard
+        # depend on it; there is nothing to exercise here without it.
+        if self.machine.execute("systemctl show smb smbd --property=LoadState --value").count("not-found") == 2:
+            self.skipTest("Samba is not installed on this image")
+
+        # Every test here edits smb.conf; put it back afterwards.
+        self.restore_file("/etc/samba/smb.conf")
+        self.machine.execute("systemctl start smb || systemctl start smbd")
+
+    def testService(self):
+        b = self.browser
+
+        self.login_and_go("/samba")
+
+        b.wait_in_text("#samba-service .pf-v6-c-card__title-text", "Samba server")
+        b.wait_text("#samba-service-state", "Running")
+
+        # The details and the connection list are behind the card's expander
+        b.click("#samba-service-toggle")
+        b.wait_visible("#samba-service-enabled")
+        b.wait_in_text("#samba-service", "No client is connected")
+
+    def testShareLifecycle(self):
         b = self.browser
         m = self.machine
 
-        m.execute("systemctl start smb || systemctl start smbd")
+        self.addCleanup(m.execute, "rm -rf /tmp/mytestshare")
 
         self.login_and_go("/samba")
-        b.wait_text(".pf-v6-c-card__title", "Samba service")
-        b.wait_in_text(".pf-v6-c-label", "Running")
+        b.wait_visible("#samba-share-create")
 
-        # Shares table lists the default shares from the test image's smb.conf
-        b.wait_visible("table[aria-label='Samba Shares Table']")
-
-        # Create a new share
-        b.click("button:contains('Create new share')")
-        b.wait_visible(".pf-v6-c-modal-box")
-        b.wait_text(".pf-v6-c-modal-box__title", "Create New Share")
-
+        # Create a share whose folder does not exist yet
+        b.click("#samba-share-create")
+        b.wait_visible("#share-dialog")
         b.set_input_text("#share-name", "mytestshare")
         b.set_input_text("#share-path", "/tmp/mytestshare")
-        b.click(".pf-v6-c-modal-box button:contains('Save Share')")
 
-        # Directory does not exist -> offered to create it
-        b.wait_text(".pf-v6-c-modal-box__title", "Create Missing Directory")
-        b.click(".pf-v6-c-modal-box button:contains('Create Directory')")
+        # The dialog notices the missing folder and offers to create it
+        b.wait_visible("#share-create-folder:checked")
+        b.click("#share-dialog button:contains('Create')")
+        b.wait_not_present("#share-dialog")
 
-        b.wait_not_present(".pf-v6-c-modal-box")
-        b.wait_in_text("table[aria-label='Samba Shares Table']", "mytestshare")
-        self.assertTrue(m.execute("test -d /tmp/mytestshare && echo yes").strip() == "yes")
+        b.wait_in_text("#samba-shares-list", "mytestshare")
+        m.execute("test -d /tmp/mytestshare")
+        self.assertIn("[mytestshare]", m.execute("cat /etc/samba/smb.conf"))
 
-        # Duplicate name is rejected inline, without touching the existing share
-        b.click("button:contains('Create new share')")
-        b.set_input_text("#share-name", "mytestshare")
-        b.wait_in_text(".pf-v6-c-form__group-control", "already exists")
+        # Editing leaves parameters this page does not manage alone
+        m.execute("printf '\\tmax connections = 7\\n' >> /etc/samba/smb.conf")
+        b.click("#samba-shares-list tr:contains('mytestshare') .pf-v6-c-menu-toggle")
+        b.click(".pf-v6-c-menu button:contains('Edit share')")
+        b.wait_visible("#share-dialog")
+        b.set_input_text("#share-comment", "Test share")
+        b.click("#share-dialog button:contains('Save')")
+        b.wait_not_present("#share-dialog")
 
-        b.click(".pf-v6-c-modal-box button:contains('Cancel')")
-        b.wait_not_present(".pf-v6-c-modal-box")
+        b.wait_in_text("#samba-shares-list", "Test share")
+        self.assertIn("max connections = 7", m.execute("cat /etc/samba/smb.conf"))
 
-        # Delete the share back out; confirmation modal explains the folder is kept
-        b.click("table[aria-label='Samba Shares Table'] tr:contains('mytestshare') .pf-v6-c-menu-toggle")
-        b.click("table[aria-label='Samba Shares Table'] .pf-v6-c-menu li:contains('Delete') button")
+        # A name that differs only in case is refused, since Samba would
+        # treat it as the same share
+        b.click("#samba-share-create")
+        b.wait_visible("#share-dialog")
+        b.set_input_text("#share-name", "MyTestShare")
+        b.wait_in_text("#share-dialog", "already exists")
+        b.click("#share-dialog button:contains('Cancel')")
+        b.wait_not_present("#share-dialog")
+
+        # Deleting says explicitly that the folder is kept, and keeps it
+        b.click("#samba-shares-list tr:contains('mytestshare') .pf-v6-c-menu-toggle")
+        b.click(".pf-v6-c-menu button:contains('Delete share')")
         b.wait_in_text(".pf-v6-c-modal-box", "not")
         b.click(".pf-v6-c-modal-box button:contains('Delete share')")
         b.wait_not_present(".pf-v6-c-modal-box")
-        b.wait_not_in_text("table[aria-label='Samba Shares Table']", "mytestshare")
 
-        self.assertTrue(m.execute("test -d /tmp/mytestshare && echo yes").strip() == "yes")
-        m.execute("rmdir /tmp/mytestshare")
+        b.wait_not_in_text("#samba-shares-list", "mytestshare")
+        self.assertNotIn("[mytestshare]", m.execute("cat /etc/samba/smb.conf"))
+        m.execute("test -d /tmp/mytestshare")
+
+    def testConfigurationIsPreserved(self):
+        """Comments and unmanaged parameters survive a change made from the page"""
+        b = self.browser
+        m = self.machine
+
+        m.execute("printf '\\n# a comment worth keeping\\n[keepme]\\n\\tpath = /tmp\\n"
+                  "\\tvfs objects = recycle\\n' >> /etc/samba/smb.conf")
+
+        self.login_and_go("/samba")
+        b.wait_in_text("#samba-shares-list", "keepme")
+
+        b.click("#samba-shares-list tr:contains('keepme') .pf-v6-c-menu-toggle")
+        b.click(".pf-v6-c-menu button:contains('Edit share')")
+        b.wait_visible("#share-dialog")
+        b.click("#share-read-only")
+        b.click("#share-dialog button:contains('Save')")
+        b.wait_not_present("#share-dialog")
+
+        config = m.execute("cat /etc/samba/smb.conf")
+        self.assertIn("# a comment worth keeping", config)
+        self.assertIn("vfs objects = recycle", config)
+
+    def testServerSettings(self):
+        b = self.browser
+        m = self.machine
+
+        m.execute("printf '\\n[globaltest]\\n\\tpath = /tmp\\n' >> /etc/samba/smb.conf")
+
+        self.login_and_go("/samba")
+        b.wait_in_text("#samba-shares-list", "globaltest")
+
+        b.click("#samba-service-actions")
+        b.click(".pf-v6-c-menu button:contains('Server settings')")
+        b.wait_visible("#global-settings-dialog")
+
+        # The editor shows the [global] body, without its header
+        self.assertNotIn("[global]", b.val("#global-settings-text"))
+
+        b.set_input_text("#global-settings-text", "\tworkgroup = TESTGROUP\n\tserver string = test")
+        b.click("#global-settings-dialog button:contains('Save')")
+        b.wait_not_present("#global-settings-dialog")
+
+        config = m.execute("cat /etc/samba/smb.conf")
+        self.assertIn("workgroup = TESTGROUP", config)
+        # Editing [global] leaves the shares alone
+        self.assertIn("[globaltest]", config)
+
+    def testAccess(self):
+        b = self.browser
+
+        self.login_and_go("/samba")
+        b.click("#samba-access-toggle")
+        b.wait_visible("#samba-users")
+        b.wait_in_text("#samba-users", "admin")
 
 
 if __name__ == '__main__':

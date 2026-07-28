@@ -186,7 +186,11 @@ prepare-check: $(NODE_MODULES_TEST) $(VM_IMAGE) test/common
 check: prepare-check
 	test/common/run-tests ${RUN_TESTS_OPTIONS}
 
-codecheck: test/common $(NODE_MODULES_TEST)
+# run the unit tests for the smb.conf model; these need no VM
+unit-tests: $(NODE_MODULES_TEST)
+	npm test
+
+codecheck: test/common $(NODE_MODULES_TEST) unit-tests
 	test/common/static-code
 
 # checkout Cockpit's bots for standard test VM images and API to launch them

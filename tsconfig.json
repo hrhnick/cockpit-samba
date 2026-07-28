@@ -1,23 +1,40 @@
+/*
+ * Config for `tsc` and `tsserver`, used only for typechecking (`npm run typecheck`).
+ *
+ * The actual build is esbuild, which strips types without checking them.
+ *
+ * Extended JSON — comments and trailing commas are fine here.
+ */
+
 {
-  "compilerOptions": {
-    "allowJs": true,
-    "checkJs": true,
-    "exactOptionalPropertyTypes": true,
-    "noUncheckedSideEffectImports": false,
-    "jsx": "react",
-    "lib": [
-      "dom",
-      "es2020"
-    ],
-    "paths": {
-        "*": ["./pkg/lib/*"]
+    "compilerOptions": {
+        "allowJs": true,
+        // pkg/lib is vendored from the Cockpit repository and is not ours to
+        // fix, so its untyped .js modules are used but not checked. Everything
+        // under src/ is TypeScript and is checked strictly.
+        "checkJs": false,
+        "skipLibCheck": true,
+        "esModuleInterop": true,
+        "exactOptionalPropertyTypes": true,
+        "noUncheckedSideEffectImports": false,
+        "incremental": true,
+        "jsx": "react",
+        "lib": [
+            "dom",
+            "es2021"
+        ],
+        "types": ["node"],
+        "paths": {
+            "*": ["./pkg/lib/*"]
+        },
+        "module": "esnext",
+        "moduleResolution": "bundler",
+        "noEmit": true,
+        "strict": true,
+        "target": "es2021",
     },
-    "moduleResolution": "bundler",
-    "noEmit": true,
-    "strict": true,
-    "target": "es2020"
-  },
-  "include": [
-    "src/**/*"
-  ]
+    "include": [
+        "src/**/*",
+        "test/unit-tests.ts"
+    ],
 }

@@ -1,2 +1,6 @@
 node_modules/*
 pkg/lib/*
+test/common/*
+tools/*
+dist/*
+tmp/*

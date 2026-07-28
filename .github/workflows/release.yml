@@ -1,6 +1,4 @@
-# Create a GitHub upstream release. Replace "TARNAME" with your project tarball
-# name and enable this by dropping the ".disabled" suffix from the file name.
-# See README.md.
+# Create a GitHub upstream release when a version tag is pushed.
 name: release
 on:
   push:
