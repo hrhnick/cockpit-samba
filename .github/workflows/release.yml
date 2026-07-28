@@ -58,17 +58,25 @@ jobs:
 
       - name: Create a release
         run: |
-          set -x
+          set -eux
 
           TAG_VERSION="$(git describe --tags)"
-          git tag -l --format='%(contents:body)' ${TAG_VERSION} > release-note.txt
-
           REPO_NAME="${GITHUB_REPOSITORY#*/}"
-          gh release create --title ${TAG_VERSION} --notes-file release-note.txt  \
-            ${TAG_VERSION} \
-            ${REPO_NAME}-${TAG_VERSION}.tar.xz \
-            ${REPO_NAME}-${TAG_VERSION}.zip \
-            *.noarch.rpm
+          ASSETS="${REPO_NAME}-${TAG_VERSION}.tar.xz ${REPO_NAME}-${TAG_VERSION}.zip"
+          ASSETS="${ASSETS} $(ls *.noarch.rpm)"
+
+          # The release can already exist: publishing one from the GitHub web
+          # interface creates the tag, which is what triggers this workflow,
+          # and re-running the job after a failure lands here too. Upload into
+          # it rather than failing.
+          if gh release view "${TAG_VERSION}" >/dev/null 2>&1; then
+              gh release upload "${TAG_VERSION}" ${ASSETS} --clobber
+          else
+              # The release notes are the body of the annotated tag.
+              git tag -l --format='%(contents:body)' "${TAG_VERSION}" > release-note.txt
+              gh release create --title "${TAG_VERSION}" --notes-file release-note.txt \
+                "${TAG_VERSION}" ${ASSETS}
+          fi
 
   deb:
     needs: source
