@@ -20,7 +20,7 @@ import cockpit from "cockpit";
 import { useDialogs } from "dialogs";
 import { fmt_to_fragments } from "utils";
 
-import { Alert, AlertActionLink } from "@patternfly/react-core/dist/esm/components/Alert/index.js";
+import { Alert } from "@patternfly/react-core/dist/esm/components/Alert/index.js";
 import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
 import { ClipboardCopy } from "@patternfly/react-core/dist/esm/components/ClipboardCopy/index.js";
 import {
@@ -32,7 +32,6 @@ import {
 import { Stack } from "@patternfly/react-core/dist/esm/layouts/Stack/index.js";
 
 import { PrincipalLabels } from "../components/labels";
-import { CreateDirectoryDialog, FixSELinuxDialog } from "./share-actions";
 import type { PathStatus } from "../samba/hooks";
 import { guestsShutOut, type Share } from "../samba/conf";
 
@@ -46,68 +45,12 @@ function serverAddress(): string {
     return !host || host === "localhost" ? window.location.hostname : host;
 }
 
-export type Problem = "missing" | "not-a-directory" | "selinux" | null;
-
-export function shareProblem(share: Share, status: PathStatus | undefined): Problem {
-    if (share.isSpecial || !share.path || !status)
-        return null;
-    if (status.state === "missing")
-        return "missing";
-    if (status.state === "not-a-directory")
-        return "not-a-directory";
-    if (!status.selinuxOk)
-        return "selinux";
-    return null;
-}
-
-export const PROBLEM_SUMMARY: Record<Exclude<Problem, null>, () => string> = {
-    missing: () => _("The folder does not exist"),
-    "not-a-directory": () => _("The path is not a folder"),
-    selinux: () => _("SELinux is blocking access to the folder"),
-};
-
-/* The banner shown when the share cannot work as configured, with the
-   fix next to the explanation. Opening a fix replaces this dialog, since
-   only one can be shown at a time. */
-const ProblemAlert = ({ share, problem, canEdit, onFixed }: {
-    share: Share;
-    problem: Exclude<Problem, null>;
-    canEdit: boolean;
-    onFixed: () => void;
-}) => {
-    const Dialogs = useDialogs();
-
-    if (problem === "not-a-directory")
-        return (
-            <Alert isInline variant="danger" title={PROBLEM_SUMMARY[problem]()}>
-                {cockpit.format(_("$0 exists but is a file, so it cannot be shared. Point the share at a folder instead."),
-                                share.path)}
-            </Alert>
-        );
-
-    const isMissing = problem === "missing";
-    return (
-        <Alert isInline
-               variant={isMissing ? "danger" : "warning"}
-               title={PROBLEM_SUMMARY[problem]()}
-               actionLinks={canEdit
-                   ? (
-                       <AlertActionLink onClick={() => Dialogs.show(isMissing
-                           ? <CreateDirectoryDialog share={share} onDone={onFixed} />
-                           : <FixSELinuxDialog share={share} onDone={onFixed} />)}>
-                           {isMissing ? _("Create folder") : _("Fix it")}
-                       </AlertActionLink>
-                   )
-                   : undefined}>
-            {isMissing
-                ? cockpit.format(_("Clients connecting to this share get an error until $0 exists."), share.path)
-                : cockpit.format(_("Samba is not allowed to read $0, so clients get a permission error."), share.path)}
-        </Alert>
-    );
-};
-
+/* A share whose folder is missing or SELinux-blocked shows that in the
+   table, next to the path, with the fix in the row's menu — not here.
+   This dialog is the read-only detail, so it explains the configuration
+   without repeating the folder warning or carrying its fix. */
 export const ShareDetailsDialog = ({
-    share, status, inUse, guestLoginsAllowed, guestAccount, canEdit, onFixed,
+    share, status, inUse, guestLoginsAllowed, guestAccount,
 }: {
     share: Share;
     status: PathStatus | undefined;
@@ -115,11 +58,8 @@ export const ShareDetailsDialog = ({
     inUse: number;
     guestLoginsAllowed: boolean;
     guestAccount: string;
-    canEdit: boolean;
-    onFixed: () => void;
 }) => {
     const Dialogs = useDialogs();
-    const problem = shareProblem(share, status);
     const disk = status?.disk;
 
     return (
@@ -128,10 +68,6 @@ export const ShareDetailsDialog = ({
             <ModalHeader title={share.name} description={share.comment} />
             <ModalBody>
                 <Stack hasGutter>
-                    {problem && (
-                        <ProblemAlert share={share} problem={problem} canEdit={canEdit}
-                                      onFixed={onFixed} />
-                    )}
                     {!share.available && (
                         <Alert isInline variant="info" title={_("This share is turned off")}>
                             {_("It keeps its configuration, but Samba does not offer it to clients.")}

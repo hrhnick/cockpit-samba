@@ -79,10 +79,11 @@ const CASES: [string, React.ReactNode, string][] = [
     ["fix permissions, filesystem root", <FixPermissionsDialog share={{ ...share, path: "/" }} onDone={nothing} />, "belongs to the operating system"],
     ["fix selinux", <FixSELinuxDialog share={share} onDone={nothing} />, "fix-selinux-dialog"],
     ["disconnect client", <DisconnectClientDialog connection={connection} onDone={nothing} />, "192.168.1.20"],
-    ["share details", <ShareDetailsDialog share={share} status={{ state: "ok", selinuxOk: true, disk: { total: 1000, available: 400 } }} inUse={2} guestLoginsAllowed guestAccount="nobody" canEdit onFixed={nothing} />, "share-details-dialog"],
-    /* A missing folder renders the problem alert with its fix inside the
-       details dialog now that the table has no expandable row. */
-    ["share details, missing folder", <ShareDetailsDialog share={share} status={{ state: "missing", selinuxOk: true, disk: null }} inUse={0} guestLoginsAllowed guestAccount="nobody" canEdit onFixed={nothing} />, "does not exist"],
+    ["share details", <ShareDetailsDialog share={share} status={{ state: "ok", selinuxOk: true, disk: { total: 1000, available: 400 } }} inUse={2} guestLoginsAllowed guestAccount="nobody" />, "share-details-dialog"],
+    /* The folder warning lives in the table now, not here: a missing
+       folder must still open the details dialog, and must not carry the
+       "does not exist" alert. */
+    ["share details, missing folder", <ShareDetailsDialog share={share} status={{ state: "missing", selinuxOk: true, disk: null }} inUse={0} guestLoginsAllowed guestAccount="nobody" />, "share-details-dialog"],
     ["manage access", <ManageAccessDialog canEdit shares={[share, sharedShare]} />, "manage-access-dialog"],
     ["server settings", <GlobalSettingsDialog conf={conf} applyConf={noop} />, "global-settings-dialog"],
     ["backup and restore", <BackupRestoreDialog conf={conf} tag="1" />, "backup-restore-dialog"],

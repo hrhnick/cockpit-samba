@@ -25,10 +25,11 @@ import { ExclamationCircleIcon, ExclamationTriangleIcon, FolderIcon, SearchIcon 
 import { SortByDirection } from "@patternfly/react-table";
 
 import { ShareDialog } from "../dialogs/share-dialog";
-import { DeleteShareDialog, FixPermissionsDialog } from "../dialogs/share-actions";
 import {
-    PROBLEM_SUMMARY, ShareDetailsDialog, shareProblem,
-} from "../dialogs/share-details-dialog";
+    CreateDirectoryDialog, DeleteShareDialog, FixPermissionsDialog, FixSELinuxDialog,
+    PROBLEM_SUMMARY, shareProblem,
+} from "../dialogs/share-actions";
+import { ShareDetailsDialog } from "../dialogs/share-details-dialog";
 import type { Connection } from "../samba/client";
 import type { PathStatus } from "../samba/hooks";
 import { sharePrincipals, type SambaConf, type Share } from "../samba/conf";
@@ -49,6 +50,7 @@ const ShareActions = ({
     canEdit: boolean;
 }) => {
     const Dialogs = useDialogs();
+    const problem = shareProblem(share, status);
 
     /* Reading is for everyone; only changing anything needs admin. */
     const items = [
@@ -56,9 +58,7 @@ const ShareActions = ({
                       onClick={() => Dialogs.show(
                           <ShareDetailsDialog share={share} status={status} inUse={inUse}
                                               guestLoginsAllowed={guestLoginsAllowed}
-                                              guestAccount={guestAccount}
-                                              canEdit={canEdit}
-                                              onFixed={onPathsChanged} />)}>
+                                              guestAccount={guestAccount} />)}>
             {_("View details")}
         </DropdownItem>,
     ];
@@ -74,6 +74,25 @@ const ShareActions = ({
                                            onPathsChanged={onPathsChanged} />)}>
                 {_("Edit share")}
             </DropdownItem>);
+
+        /* The fix for the folder problem the table flags, so it is
+           reachable next to the share rather than only from a dialog.
+           not-a-directory has no one-click fix — the share has to point
+           somewhere else — so only these two get an item. */
+        if (problem === "missing")
+            items.push(
+                <DropdownItem key="createfolder"
+                              onClick={() => Dialogs.show(
+                                  <CreateDirectoryDialog share={share} onDone={onPathsChanged} />)}>
+                    {_("Create folder")}
+                </DropdownItem>);
+        if (problem === "selinux")
+            items.push(
+                <DropdownItem key="fixselinux"
+                              onClick={() => Dialogs.show(
+                                  <FixSELinuxDialog share={share} onDone={onPathsChanged} />)}>
+                    {_("Allow Samba to use the folder")}
+                </DropdownItem>);
 
         /* Only worth offering where there is a folder to fix and accounts
            to grant it to. */
