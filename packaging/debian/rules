@@ -1,0 +1,18 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+# The release tarball ships a prebuilt dist/, and rebuilding it would need
+# network access to fetch node modules, which a package build does not have.
+override_dh_auto_build:
+
+override_dh_auto_test:
+
+override_dh_auto_clean:
+
+# DIST_TEST is the stamp file that makes `install` rebuild the bundle first.
+# Clearing it installs the dist/ that is already in the tarball, which is the
+# same thing the RPM spec does when nodejs-esbuild is unavailable.
+override_dh_auto_install:
+	$(MAKE) install DESTDIR=$(CURDIR)/debian/cockpit-samba PREFIX=/usr DIST_TEST=
