@@ -18,9 +18,9 @@ import {
     acceptGuestLogins, addSection, emptyShare, getParam, getSection, globalText,
     guestLoginsAccepted, isAuditEnabled, normalizeKey, parseBool, parseConf,
     readShares, removeSection, serializeConf, setAuditEnabled, setGlobalText,
-    setParam, writeShare, type Share,
+    renameSection, setParam, writeShare, type Share,
 } from "../src/samba/conf";
-import { isProtectedPath, normalizePath } from "../src/samba/paths";
+import { fcontextPattern, isProtectedPath, normalizePath } from "../src/samba/paths";
 
 const SAMPLE = `#
 # A hand written smb.conf
@@ -473,4 +473,34 @@ test("an ordinary share folder is allowed", () => {
        up a file server, so depth alone cannot be the rule. */
     for (const path of ["/data", "/storage", "/tank", "/pool/share"])
         assert.equal(isProtectedPath(path), false, path);
+});
+
+test("the semanage pattern escapes the path's regex metacharacters", () => {
+    /* Folder names with parentheses or dots are ordinary, and a wrong
+       fcontext rule is permanent and re-applied at every relabel. */
+    assert.equal(fcontextPattern("/srv/media (public)"),
+                 "/srv/media \\(public\\)(/.*)?");
+    assert.equal(fcontextPattern("/srv/v2.0+data"),
+                 "/srv/v2\\.0\\+data(/.*)?");
+    assert.equal(fcontextPattern("/srv/plain/"), "/srv/plain(/.*)?");
+    /* The path that would have matched everything under /srv matches
+       only the literal folder of that name. */
+    assert.equal(fcontextPattern("/srv/.*"), "/srv/\\.\\*(/.*)?");
+});
+
+/* The model writes names and values into the file verbatim, one line
+   each, so it must refuse text that would spill into a second line or
+   close a section header early. */
+test("the model refuses config injection through values and names", () => {
+    const conf = parseConf("[a]\n\tpath = /srv\n");
+    const section = getSection(conf, "a")!;
+
+    assert.throws(() => setParam(section, "comment", "x\n[evil]"), /line break/);
+    assert.throws(() => setParam(section, "comment\nvalid users = eve", "x"), /line break/);
+    assert.throws(() => addSection(conf, "a]\nvalid users = eve"), /line break|\]/);
+    assert.throws(() => addSection(conf, "a] b"), /\]/);
+    assert.throws(() => renameSection(section, "b]c"), /\]/);
+
+    /* Nothing was half-applied along the way. */
+    assert.equal(serializeConf(conf), "[a]\n\tpath = /srv\n");
 });

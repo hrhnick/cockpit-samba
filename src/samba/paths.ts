@@ -61,3 +61,17 @@ export function normalizePath(path: string): string {
 export function isProtectedPath(path: string): boolean {
     return PROTECTED_PATHS.has(normalizePath(path));
 }
+
+/* The pattern registered with `semanage fcontext` for a share folder.
+ *
+ * semanage takes a regular expression, and folder names contain regex
+ * metacharacters more often than one would think — "/srv/media (public)"
+ * is a perfectly ordinary path. Interpolated raw, that writes a rule
+ * which matches the wrong set of paths, or none; and fcontext rules are
+ * permanent and re-applied at every filesystem relabel, so a wrong one
+ * does not stay harmless.
+ */
+export function fcontextPattern(path: string): string {
+    const escaped = normalizePath(path).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return `${escaped}(/.*)?`;
+}

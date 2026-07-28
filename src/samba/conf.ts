@@ -200,7 +200,20 @@ function indentOf(line: string | undefined): string {
     return match ? match[0] : "\t";
 }
 
+/* A parameter value or name becomes one line of smb.conf verbatim, so a
+   line break inside one would end the parameter early and turn the rest
+   into configuration — a parameter, or a whole [section], that nobody
+   wrote. Every input this page offers is single-line, so nothing
+   legitimate is refused; this is the model insisting on it rather than
+   trusting every present and future caller to. */
+function assertSingleLine(text: string, what: string): void {
+    if (/[\n\r]/.test(text))
+        throw new Error(`${what} must not contain line breaks`);
+}
+
 export function setParam(section: ConfSection, label: string, value: string): void {
+    assertSingleLine(label, "parameter name");
+    assertSingleLine(value, "parameter value");
     const norm = normalizeKey(label);
 
     /* Update the last definition in place and drop any earlier
@@ -264,7 +277,18 @@ export function setOrDeleteParam(section: ConfSection, label: string, value: str
         deleteParam(section, label);
 }
 
+/* A section name becomes the `[name]` header line, so "]" would end the
+   name early and a line break would end the line; either way the rest
+   becomes configuration nobody wrote. The share dialog refuses these
+   before they get here; the model refuses them regardless of who calls. */
+function assertSectionName(name: string): void {
+    assertSingleLine(name, "section name");
+    if (name.includes("]"))
+        throw new Error("section name must not contain \"]\"");
+}
+
 export function addSection(conf: SambaConf, name: string): ConfSection {
+    assertSectionName(name);
     const existing = getSection(conf, name);
     if (existing)
         return existing;
@@ -305,6 +329,7 @@ export function removeSection(conf: SambaConf, name: string): void {
 }
 
 export function renameSection(section: ConfSection, name: string): void {
+    assertSectionName(name);
     section.headerLines = [`[${name}]`];
     section.name = name;
     section.key = name.toLowerCase();
