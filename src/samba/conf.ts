@@ -365,6 +365,9 @@ export interface Share {
     recycleBin: boolean;
     /* The share is offered to macOS as a Time Machine backup target. */
     timeMachine: boolean;
+    /* How large the backups may grow, e.g. "500G". Empty for no limit —
+       which on a backup target means "until the disk is full". */
+    timeMachineMaxSize: string;
 }
 
 /* A share with nothing configured, which is both what the create dialog
@@ -388,6 +391,7 @@ export function emptyShare(): Share {
         directoryMask: "",
         recycleBin: false,
         timeMachine: false,
+        timeMachineMaxSize: "",
     };
 }
 
@@ -521,6 +525,7 @@ export function readShare(conf: SambaConf, section: ConfSection): Share {
            option that turns the share into a backup target. */
         timeMachine: modules.includes("fruit") &&
             parseBool(getParam(section, "fruit:time machine")) === true,
+        timeMachineMaxSize: getParam(section, "fruit:time machine max size") ?? "",
     };
 }
 
@@ -547,6 +552,7 @@ function writeShareVfs(conf: SambaConf, section: ConfSection, share: Share): voi
         modules.push(...FRUIT_MODULES);
         for (const [key, value] of Object.entries(FRUIT_PARAMS))
             setParam(section, key, value);
+        setOrDeleteParam(section, "fruit:time machine max size", share.timeMachineMaxSize.trim());
     } else {
         deleteParamFamily(section, "fruit:");
     }
@@ -636,6 +642,21 @@ export function acceptGuestLogins(conf: SambaConf): void {
     /* "Bad User" maps an unknown name to the guest account, and leaves a
        wrong password for a known name as the failure it is. */
     setParam(section, "map to guest", "Bad User");
+}
+
+/* The account a guest connection runs as. `valid users` is checked
+   against this account like any other, which is easy to trip over: a
+   share that allows guests but lists particular users turns guests away
+   unless this account is on the list. */
+export function guestAccount(conf: SambaConf): string {
+    return getParam(getSection(conf, GLOBAL), "guest account") || "nobody";
+}
+
+/* Whether this share's user list shuts out the guests it claims to
+   allow. */
+export function guestsShutOut(conf: SambaConf, share: Share): boolean {
+    return share.guestOk && share.validUsers.length > 0 &&
+        !share.validUsers.includes(guestAccount(conf));
 }
 
 /* --- [global] --------------------------------------------------------- */

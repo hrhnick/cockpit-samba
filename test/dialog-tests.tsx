@@ -61,11 +61,13 @@ const nothing = () => {};
 /* Each case is a marker that must appear in the DOM once the dialog is
    open, so that "did not throw" cannot pass for "rendered nothing". */
 const CASES: [string, React.ReactNode, string][] = [
-    ["create share", <ShareDialog share={null} shares={[share]} guestLoginsAllowed applyConf={noop} onPathsChanged={nothing} />, "share-name"],
-    ["edit share", <ShareDialog share={share} shares={[share]} guestLoginsAllowed applyConf={noop} onPathsChanged={nothing} />, "share-name"],
+    ["create share", <ShareDialog share={null} shares={[share]} guestLoginsAllowed guestAccount="nobody" applyConf={noop} onPathsChanged={nothing} />, "share-name"],
+    ["edit share", <ShareDialog share={share} shares={[share]} guestLoginsAllowed guestAccount="nobody" applyConf={noop} onPathsChanged={nothing} />, "share-name"],
     /* The advanced fields are rendered collapsed, so they still have to
        mount: a broken one would take the whole dialog down. */
-    ["edit share, more options", <ShareDialog share={sharedShare} shares={[sharedShare]} guestLoginsAllowed={false} applyConf={noop} onPathsChanged={nothing} />, "share-time-machine"],
+    ["edit share, more options", <ShareDialog share={sharedShare} shares={[sharedShare]} guestLoginsAllowed={false} guestAccount="nobody" applyConf={noop} onPathsChanged={nothing} />, "share-time-machine"],
+    /* Guests allowed next to a user list that shuts them out must warn. */
+    ["edit share, guest conflict", <ShareDialog share={{ ...share, guestOk: true }} shares={[share]} guestLoginsAllowed guestAccount="nobody" applyConf={noop} onPathsChanged={nothing} />, "share-guest-conflict"],
     ["delete share", <DeleteShareDialog share={share} applyConf={noop} />, "Delete share"],
     ["create directory", <CreateDirectoryDialog share={share} onDone={nothing} />, "create-directory-dialog"],
     ["fix permissions, ownership", <FixPermissionsDialog share={share} onDone={nothing} />, "fix-permissions-dialog"],
@@ -76,11 +78,21 @@ const CASES: [string, React.ReactNode, string][] = [
     ["fix permissions, filesystem root", <FixPermissionsDialog share={{ ...share, path: "/" }} onDone={nothing} />, "belongs to the operating system"],
     ["fix selinux", <FixSELinuxDialog share={share} onDone={nothing} />, "fix-selinux-dialog"],
     ["disconnect client", <DisconnectClientDialog connection={connection} onDone={nothing} />, "192.168.1.20"],
-    ["manage access", <ManageAccessDialog canEdit />, "manage-access-dialog"],
+    ["manage access", <ManageAccessDialog canEdit shares={[share, sharedShare]} />, "manage-access-dialog"],
     ["server settings", <GlobalSettingsDialog conf={conf} applyConf={noop} />, "global-settings-dialog"],
     ["backup and restore", <BackupRestoreDialog conf={conf} tag="1" />, "backup-restore-dialog"],
     ["logs", <LogsDialog conf={conf} unit="smb.service" applyConf={noop} canEdit />, "logs-dialog"],
 ];
+
+/* The async loads inside the dialogs settle during the wait below, which
+   React reports as updates outside act(); for this smoke harness that is
+   the mechanism, not a mistake, so the warning is noise. */
+const nativeConsoleError = console.error.bind(console);
+console.error = (...args: unknown[]) => {
+    if (typeof args[0] === "string" && args[0].includes("not wrapped in act"))
+        return;
+    nativeConsoleError(...args);
+};
 
 const Opener = ({ dialog }: { dialog: React.ReactNode }) => {
     const Dialogs = useDialogs();

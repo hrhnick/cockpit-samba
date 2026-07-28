@@ -37,11 +37,13 @@ import {
 } from "@patternfly/react-core/dist/esm/components/Modal/index.js";
 import { SearchInput } from "@patternfly/react-core/dist/esm/components/SearchInput/index.js";
 import { Toolbar, ToolbarContent, ToolbarItem } from "@patternfly/react-core/dist/esm/components/Toolbar/index.js";
+import { Flex } from "@patternfly/react-core/dist/esm/layouts/Flex/index.js";
 import { SearchIcon } from "@patternfly/react-icons";
 import { SortByDirection } from "@patternfly/react-table";
 
 import * as client from "../samba/client";
 import type { SambaUser } from "../samba/client";
+import type { Share } from "../samba/conf";
 
 const _ = cockpit.gettext;
 
@@ -50,7 +52,24 @@ type View =
     | { name: "password", user: SambaUser }
     | { name: "remove", user: SambaUser };
 
-export const ManageAccessDialog = ({ canEdit }: { canEdit: boolean }) => {
+/* The shares this account may connect to: those open to everyone with a
+   password, and those whose list names the account or one of its groups.
+   Turned-off shares are skipped — they admit nobody. */
+function reachableShares(user: SambaUser, shares: Share[]): string[] {
+    return shares
+            .filter(share => share.available)
+            .filter(share =>
+                share.validUsers.length === 0 ||
+                share.validUsers.includes(user.name) ||
+                share.validUsers.some(entry =>
+                    entry.startsWith("@") && user.groups.includes(entry.slice(1))))
+            .map(share => share.name);
+}
+
+export const ManageAccessDialog = ({ canEdit, shares }: {
+    canEdit: boolean;
+    shares: Share[];
+}) => {
     const Dialogs = useDialogs();
 
     const [users, setUsers] = useState<SambaUser[]>([]);
@@ -183,19 +202,35 @@ export const ManageAccessDialog = ({ canEdit }: { canEdit: boolean }) => {
         { title: _("User"), sortable: true },
         { title: _("Full name"), sortable: true },
         { title: _("Samba access"), sortable: true },
+        { title: _("Shares") },
         { title: "", props: { screenReaderText: _("Actions") } },
     ];
 
     const rows = filtered.map(user => ({
         props: { key: user.name, "data-row-id": user.name },
         columns: [
-            { title: user.name, sortKey: user.name, props: { width: 25 as const } },
-            { title: user.fullName, sortKey: user.fullName, props: { width: 30 as const } },
+            { title: user.name, sortKey: user.name, props: { width: 20 as const } },
+            { title: user.fullName, sortKey: user.fullName, props: { width: 25 as const } },
             {
                 title: user.hasPassword
                     ? <Label color="green">{_("Allowed")}</Label>
                     : <Label color="grey">{_("No access")}</Label>,
                 sortKey: user.hasPassword ? "1" : "0",
+            },
+            {
+                /* Which shares the password would open, not which are
+                   open now: it answers "what happens if I allow this
+                   account" for accounts without one too. */
+                title: (() => {
+                    const names = reachableShares(user, shares);
+                    if (names.length === 0)
+                        return <span className="samba-subtle">{_("None")}</span>;
+                    return (
+                        <Flex spaceItems={{ default: "spaceItemsSm" }}>
+                            {names.map(name => <Label key={name} isCompact>{name}</Label>)}
+                        </Flex>
+                    );
+                })(),
             },
             {
                 title: canEdit

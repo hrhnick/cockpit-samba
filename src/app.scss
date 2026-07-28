@@ -42,9 +42,27 @@
   --pf-v6-c-card--m-expanded__header-toggle-icon--Rotate: 0deg;
 }
 
+// The Cockpit releases this page is installed into draw card borders with
+// PatternFly 5's border color; PatternFly 6 resolves ours to #e0e0e0,
+// which sits next to theirs looking mismatched. Pin the PF5 value, with
+// PF6's own dark-theme border for dark mode. The border is painted by the
+// card's ::before overlay, so that is where the color has to go.
+.ct-card.pf-v6-c-card::before {
+  border-color: #d2d2d2;
+}
+
+:where(.pf-v6-theme-dark) .ct-card.pf-v6-c-card::before {
+  border-color: var(--pf-t--global--border--color--default);
+}
+
 .ct-card-expandable-header {
   .pf-v6-c-card__header-toggle-icon {
     transform: rotate(-90deg);
+
+    // The caret glyph nearly fills its box where the old angle icon was a
+    // narrow sliver, so at the inherited size it reads as bigger than the
+    // toggles on the rest of the machine's cards. One step down matches.
+    font-size: var(--pf-t--global--icon--size--font--xs);
   }
 
   // PatternFly pins the toggle to the top of the header for the sake of

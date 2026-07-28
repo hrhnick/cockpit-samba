@@ -26,6 +26,8 @@ import * as client from "../samba/client";
 import { isProtectedPath } from "../samba/paths";
 import { emptyShare, type Share, type SambaConf, writeShare } from "../samba/conf";
 
+const fmt = cockpit.format;
+
 const _ = cockpit.gettext;
 
 export interface ShareDialogProps {
@@ -36,6 +38,9 @@ export interface ShareDialogProps {
     /* Whether the server maps unknown users to the guest account at all.
        Without it a share can allow guests and still turn them away. */
     guestLoginsAllowed: boolean;
+    /* The account guests connect as, which `valid users` is checked
+       against like anyone else. */
+    guestAccount: string;
     applyConf: (mutate: (conf: SambaConf) => void) => Promise<void>;
     /* Re-check directory and SELinux state after the dialog changed it. */
     onPathsChanged: () => void;
@@ -45,8 +50,12 @@ export interface ShareDialogProps {
    digits as chmod. */
 const MASK_RE = /^[0-7]{3,4}$/;
 
+/* Sizes the way vfs_fruit takes them: a number and one of Samba's
+   binary suffixes. */
+const SIZE_RE = /^[0-9]+\s*[KMGTP]?$/i;
+
 export const ShareDialog = ({
-    share, shares, guestLoginsAllowed, applyConf, onPathsChanged,
+    share, shares, guestLoginsAllowed, guestAccount, applyConf, onPathsChanged,
 }: ShareDialogProps) => {
     const alert = useAlerts();
     const isEdit = share !== null;
@@ -132,6 +141,35 @@ export const ShareDialog = ({
     const createMaskError = maskError(form.createMask);
     const directoryMaskError = maskError(form.directoryMask);
 
+    const sizeError = form.timeMachine && form.timeMachineMaxSize.trim() &&
+        !SIZE_RE.test(form.timeMachineMaxSize.trim())
+        ? _("Enter a number with a unit, like 500G or 1T.")
+        : "";
+
+    /* Time Machine writes backups, so a read-only backup target is a
+       contradiction rather than a choice. */
+    const timeMachineError = form.timeMachine && form.readOnly
+        ? _("Time Machine has to write to the share, so turn Read only off.")
+        : "";
+
+    /* `valid users`, once set, is the whole list of who may connect;
+       write list grants writing, not entry. A writer missing from the
+       list would be turned away at the door with their write permission
+       in hand. Adding a writer adds them to the list automatically, so
+       this only trips when someone is removed from one list but not the
+       other. */
+    const shutOutWriters = form.validUsers.length > 0
+        ? form.writeList.filter(w => !form.validUsers.includes(w))
+        : [];
+    const writeListError = shutOutWriters.length > 0
+        ? fmt(_("$0 cannot connect to the share: \"Access for\" is set and does not include them."),
+              shutOutWriters.join(", "))
+        : "";
+
+    /* The same gate catches guests: they connect as the guest account. */
+    const guestsShutOut = form.guestOk && form.validUsers.length > 0 &&
+        !form.validUsers.includes(guestAccount);
+
     const isMissing = needsPath && pathState === "missing";
     const folderExists = needsPath && pathState === "ok";
     /* A folder whose permissions this page will not take over; see
@@ -139,6 +177,7 @@ export const ShareDialog = ({
        whatever the admin points it at — but the folder is left alone. */
     const isSystemFolder = needsPath && !!path && isProtectedPath(path);
     const isValid = !!name && !nameError && !createMaskError && !directoryMaskError &&
+        !sizeError && !timeMachineError && !writeListError &&
         (!needsPath || (!!path && !pathError));
 
     /* Chips for the users and groups already on the share, the system's
@@ -175,6 +214,7 @@ export const ShareDialog = ({
         directoryMask: form.directoryMask.trim(),
         hostsAllow: form.hostsAllow.trim(),
         hostsDeny: form.hostsDeny.trim(),
+        timeMachineMaxSize: form.timeMachineMaxSize.trim(),
         isSpecial: share?.isSpecial ?? false,
     });
 
@@ -275,6 +315,18 @@ export const ShareDialog = ({
                           onChange={(_event, checked) => update({ guestOk: checked })} />
             </FormGroup>
 
+            {/* Warned rather than blocked: adding the guest account to
+                the list is a legitimate way to have both. */}
+            {guestsShutOut && (
+                <FormSection>
+                    <Alert isInline variant="warning" id="share-guest-conflict"
+                           title={_("Guests are allowed but cannot get in")}>
+                        {fmt(_("Guests connect as the $0 account, and \"Access for\" does not include it. Add $0 to the list, or clear the list."),
+                             guestAccount)}
+                    </Alert>
+                </FormSection>
+            )}
+
             {isMissing && (
                 <FormSection>
                     <Alert isInline
@@ -325,12 +377,23 @@ export const ShareDialog = ({
                                           options={principalOptions(form.writeList, writerTyped)}
                                           selected={form.writeList}
                                           placeholder={form.writeList.length === 0 ? _("Nobody in particular") : ""}
-                                          onAdd={value => update({ writeList: [...form.writeList, String(value)] })}
+                                          onAdd={value => {
+                                              const writer = String(value);
+                                              /* A writer has to be able to connect, and once
+                                                 "Access for" is a list, being on it is what
+                                                 grants that. */
+                                              const validUsers = form.validUsers.length > 0 &&
+                                                  !form.validUsers.includes(writer)
+                                                  ? [...form.validUsers, writer]
+                                                  : form.validUsers;
+                                              update({ writeList: [...form.writeList, writer], validUsers });
+                                          }}
                                           onRemove={value => update({ writeList: form.writeList.filter(u => u !== value) })}
                                           onInputChange={setWriterTyped}
                                           noOptionsFoundMessage={() => _("Type a user name, or @ and a group name")} />
                     <FormHelper fieldId="share-write-list"
-                                helperText={_("These may change files even when the share is read only.")} />
+                                helperTextInvalid={writeListError}
+                                helperText={_("These may change files even when the share is read only. Anyone added here is also added to \"Access for\" when that is a list.")} />
                 </FormGroup>
 
                 <FormGroup label={_("Allowed clients")} fieldId="share-hosts-allow">
@@ -399,10 +462,21 @@ export const ShareDialog = ({
                               isChecked={form.timeMachine}
                               onChange={(_event, checked) => update({ timeMachine: checked })} />
                     <FormHelper fieldId="share-time-machine"
-                                helperTextInvalid={form.timeMachine && form.readOnly
-                                    ? _("Time Machine has to write to the share, so turn Read only off.")
-                                    : ""} />
+                                helperTextInvalid={timeMachineError} />
                 </FormGroup>
+
+                {form.timeMachine && (
+                    <FormGroup label={_("Backup size limit")} fieldId="share-tm-max-size">
+                        <TextInput id="share-tm-max-size"
+                                   value={form.timeMachineMaxSize}
+                                   placeholder="1T"
+                                   validated={sizeError ? "error" : "default"}
+                                   onChange={(_event, value) => update({ timeMachineMaxSize: value })} />
+                        <FormHelper fieldId="share-tm-max-size"
+                                    helperTextInvalid={sizeError}
+                                    helperText={_("How much space the backups may use, like 500G or 1T. Without a limit, macOS grows them until the disk is full.")} />
+                    </FormGroup>
+                )}
             </ExpandableSection>
         </DialogFrame>
     );
