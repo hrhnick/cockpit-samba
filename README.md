@@ -59,12 +59,22 @@ Reload the browser and the page appears under *Samba shares*.
 - Create, edit, rename and delete shares
 - Read-only or read-write, guest access, and whether the share is visible when
   browsing the server
+- Turn a share off without deleting it
 - Restrict a share to particular users and groups, with completion from the
-  accounts and groups on the machine
-- Expand a share to see who may connect, how many clients are connected, and the
-  network address to use from a client
+  accounts and groups on the machine, and name people who may write even on a
+  read-only share
+- Limit a share to particular client addresses or subnets
+- Choose the group and permissions new files get, so several people can work in
+  one folder
+- Recycle bin, so a file deleted over the network is moved aside rather than
+  destroyed
+- Time Machine, which offers the share to macOS as a backup destination
+- Expand a share to see who may connect, free space, how many clients are
+  connected, and the network address to copy into a client
 - Detects a share whose folder is missing or which SELinux is blocking, and
   offers to fix either
+- *Fix folder permissions* gives the share's users access to the folder itself,
+  which changing the user list does not do on its own
 
 **Access** — *Manage access*, in the server card's menu
 
@@ -76,7 +86,7 @@ Reload the browser and the page appears under *Samba shares*.
 
 - Status, version and uptime; start, stop and restart; start on boot
 - Who is connected, which shares they have open, and whether the connection is
-  encrypted and signed
+  encrypted and signed; disconnect a client
 - Edit the `[global]` section, with `testparm` validating every change
 - Download the configuration, or restore one from a file
 - Follow the Samba journal, and optionally log file activity through the
@@ -92,6 +102,17 @@ Every write is checked with `testparm` first, the previous file is copied to
 `/etc/samba/smb.conf.bak`, and the running server is asked to reload. The page
 follows the file, so a change made in a text editor, or by another Cockpit
 session, shows up here without a refresh.
+
+Two things are worth knowing:
+
+- **`include` is not followed.** Shares defined in an included file are kept as
+  they are, but they are not listed here and cannot be edited from this page.
+  Only shares written in `smb.conf` itself appear.
+- **`vfs objects` is not additive in Samba.** A share that sets it overrides
+  `[global]` rather than adding to it. When this page has to write that
+  parameter on a share — for the recycle bin or Time Machine — it carries the
+  modules the share was inheriting across, so file activity logging is not
+  silently switched off for that one share.
 
 ## Development
 
@@ -118,13 +139,27 @@ npm test              # smb.conf model, and every dialog mounts
 npm run typecheck     # tsc
 npm run eslint
 npm run stylelint
+make check-patternfly # PatternFly matches the vendored pkg/lib
 make check            # browser integration tests, needs a test VM
 ```
 
+Everything except `make check` runs on every push and pull request, through
+`.github/workflows/checks.yml`.
+
 `pkg/lib` is checked out from the [Cockpit
 repository](https://github.com/cockpit-project/cockpit) by the Makefile at the
-commit pinned in `COCKPIT_REPO_COMMIT`; the PatternFly versions in
-`package.json` are kept in step with the ones that checkout is built against.
+commit pinned in `COCKPIT_REPO_COMMIT`, and its components are written against
+the PatternFly release Cockpit used at that commit. `package.json` has to name
+those same versions: a mismatch still builds, and shows up only as components
+that are styled wrong. `make check-patternfly` compares the two.
+
+That matters most for the `cockpit-lib-update` workflow, which moves the pin
+weekly and does not touch `package.json`. Its pull request is opened with
+`GITHUB_TOKEN`, which does not start the checks workflow, so run that workflow
+against the branch by hand before merging.
+
+There are no translations. `po/` is created by the Makefile when it is needed;
+adding a `.po` file there is all that is required to start one.
 
 ## License
 

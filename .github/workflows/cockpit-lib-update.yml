@@ -1,3 +1,13 @@
+# Moves COCKPIT_REPO_COMMIT forward and re-checks out pkg/lib.
+#
+# IMPORTANT: pkg/lib is written against the PatternFly release Cockpit used
+# at that commit, and this does not touch package.json, so its pull request
+# can introduce a version mismatch that builds cleanly and renders wrong.
+# Its pull request is opened with GITHUB_TOKEN, which by design does not
+# start the checks workflow, so nothing catches that automatically: run the
+# checks workflow by hand against the branch before merging
+# (Actions -> checks -> Run workflow -> pick the branch), or run
+# `make check-patternfly` locally.
 name: cockpit-lib-update
 on:
   schedule:
