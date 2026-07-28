@@ -2,7 +2,9 @@ Name: cockpit-samba
 Version: %{VERSION}
 Release: 1%{?dist}
 Summary: Cockpit module for managing Samba file shares
-License: LGPL-2.1-or-later
+# The project's own code is MIT; the built page bundles pkg/lib from the
+# Cockpit repository, which is LGPL.
+License: MIT AND LGPL-2.1-or-later
 
 # distributions which ship nodejs-esbuild can rebuild the bundle during package build
 %if 0%{?fedora} >= 42

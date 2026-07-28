@@ -2,7 +2,7 @@
 
 /*
  * Copyright (C) 2026 cockpit-samba contributors
- * SPDX-License-Identifier: LGPL-2.1-or-later
+ * SPDX-License-Identifier: MIT
  */
 
 /* Check that our PatternFly versions match the ones the vendored pkg/lib
