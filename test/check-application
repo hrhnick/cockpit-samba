@@ -140,13 +140,109 @@ class TestApplication(testlib.MachineCase):
         # Editing [global] leaves the shares alone
         self.assertIn("[globaltest]", config)
 
+    def testAdvancedShareOptions(self):
+        """The options behind "More options" reach smb.conf and come back"""
+        b = self.browser
+        m = self.machine
+
+        m.execute("printf '\\n[optshare]\\n\\tpath = /tmp\\n' >> /etc/samba/smb.conf")
+
+        self.login_and_go("/samba")
+        b.wait_in_text("#samba-shares-list", "optshare")
+
+        b.click("#samba-shares-list tr:contains('optshare') .pf-v6-c-menu-toggle")
+        b.click(".pf-v6-c-menu button:contains('Edit share')")
+        b.wait_visible("#share-dialog")
+
+        # Turn the share off, and set the options that live behind the
+        # expander
+        b.click("#share-available")
+        b.click("#share-dialog button:contains('More options')")
+        b.wait_visible("#share-hosts-allow")
+        b.set_input_text("#share-hosts-allow", "192.168.1.")
+        b.set_input_text("#share-create-mask", "0664")
+        b.click("#share-recycle")
+        b.click("#share-dialog button:contains('Save')")
+        b.wait_not_present("#share-dialog")
+
+        config = m.execute("cat /etc/samba/smb.conf")
+        self.assertIn("available = no", config)
+        self.assertIn("hosts allow = 192.168.1.", config)
+        self.assertIn("create mask = 0664", config)
+        self.assertIn("recycle", config)
+        self.assertIn("recycle:repository", config)
+
+        # A share that is off says so in the table
+        b.wait_in_text("#samba-shares-list tr:contains('optshare')", "Off")
+
+        # An invalid mask is refused rather than written
+        b.click("#samba-shares-list tr:contains('optshare') .pf-v6-c-menu-toggle")
+        b.click(".pf-v6-c-menu button:contains('Edit share')")
+        b.wait_visible("#share-dialog")
+        b.click("#share-dialog button:contains('More options')")
+        b.set_input_text("#share-create-mask", "0999")
+        b.wait_in_text("#share-dialog", "three or four digits")
+        b.wait_visible("#share-dialog button:contains('Save'):disabled")
+        b.click("#share-dialog button:contains('Cancel')")
+        b.wait_not_present("#share-dialog")
+
+    def testGuestAccessIsMadeToWork(self):
+        """Allowing guests also sets map to guest, without which it does nothing"""
+        b = self.browser
+        m = self.machine
+
+        m.execute("sed -i '/map to guest/d' /etc/samba/smb.conf")
+        m.execute("printf '\\n[guestshare]\\n\\tpath = /tmp\\n' >> /etc/samba/smb.conf")
+
+        self.login_and_go("/samba")
+        b.wait_in_text("#samba-shares-list", "guestshare")
+
+        b.click("#samba-shares-list tr:contains('guestshare') .pf-v6-c-menu-toggle")
+        b.click(".pf-v6-c-menu button:contains('Edit share')")
+        b.wait_visible("#share-dialog")
+        # The dialog says it is going to do this
+        b.wait_in_text("#share-dialog", "accept guest logins")
+        b.click("#share-guest-ok")
+        b.click("#share-dialog button:contains('Save')")
+        b.wait_not_present("#share-dialog")
+
+        config = m.execute("cat /etc/samba/smb.conf")
+        self.assertIn("guest ok = yes", config)
+        self.assertIn("map to guest = Bad User", config)
+
+    def testFixFolderPermissions(self):
+        """The folder does not follow the share's user list on its own"""
+        b = self.browser
+        m = self.machine
+
+        self.addCleanup(m.execute, "rm -rf /tmp/permshare")
+        m.execute("mkdir -p /tmp/permshare && chown root:root /tmp/permshare")
+        m.execute("printf '\\n[permshare]\\n\\tpath = /tmp/permshare\\n"
+                  "\\tvalid users = admin\\n' >> /etc/samba/smb.conf")
+
+        self.login_and_go("/samba")
+        b.wait_in_text("#samba-shares-list", "permshare")
+
+        b.click("#samba-shares-list tr:contains('permshare') .pf-v6-c-menu-toggle")
+        b.click(".pf-v6-c-menu button:contains('Fix folder permissions')")
+        b.wait_visible("#fix-permissions-dialog")
+        # It says what it is about to do before doing it
+        b.wait_in_text("#fix-permissions-dialog", "owned by admin")
+        b.click("#fix-permissions-dialog button:contains('Apply permissions')")
+        b.wait_not_present("#fix-permissions-dialog")
+
+        self.assertEqual(m.execute("stat -c %U /tmp/permshare").strip(), "admin")
+
     def testAccess(self):
         b = self.browser
 
         self.login_and_go("/samba")
-        b.click("#samba-access-toggle")
-        b.wait_visible("#samba-users")
+        b.click("#samba-service-actions")
+        b.click(".pf-v6-c-menu button:contains('Manage access')")
+        b.wait_visible("#manage-access-dialog")
         b.wait_in_text("#samba-users", "admin")
+        b.click("#manage-access-dialog button:contains('Close')")
+        b.wait_not_present("#manage-access-dialog")
 
 
 if __name__ == '__main__':

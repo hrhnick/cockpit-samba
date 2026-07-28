@@ -123,23 +123,46 @@ export function useSambaService(): ServiceState {
     };
 }
 
+/* Whether anyone can see the page. cockpit.hidden covers both a
+   background browser tab and the Cockpit shell showing another page,
+   neither of which the document's own visibility API reports on its
+   own. */
+function usePageVisible(): boolean {
+    const [visible, setVisible] = useState(!cockpit.hidden);
+
+    useEffect(() => {
+        const update = () => setVisible(!cockpit.hidden);
+        cockpit.addEventListener("visibilitychange", update);
+        /* In case it changed between the first render and here. */
+        update();
+        return () => cockpit.removeEventListener("visibilitychange", update);
+    }, []);
+
+    return visible;
+}
+
 /* Read a value that has no change notification, with a manual refresh and
-   optional polling. Used for smbstatus, which has to be re-run to see
-   clients coming and going. */
+ * optional polling. Used for smbstatus, which has to be re-run to see
+ * clients coming and going.
+ *
+ * Polling stops while the page is in a background tab or the Cockpit
+ * shell is showing something else: nobody is watching the answer, and
+ * running smbstatus every few seconds forever is not free on the small
+ * machines this tends to run on.
+ */
 export function usePolled<T>(load: () => Promise<T>, initial: T,
     enabled: boolean, intervalSeconds = 0): {
-    value: T, refresh: () => Promise<void>, refreshing: boolean, loaded: boolean
+    value: T, refresh: () => Promise<void>, refreshing: boolean
 } {
     const [value, setValue] = useState<T>(initial);
     const [refreshing, setRefreshing] = useState(false);
-    /* False until the first read finished, so callers can tell "nothing
-       to show" apart from "not read yet". */
-    const [loaded, setLoaded] = useState(false);
+
+    const visible = usePageVisible();
+    const active = enabled && visible;
 
     const refresh = useCallback(async () => {
         if (!enabled) {
             setValue(initial);
-            setLoaded(true);
             return;
         }
         setRefreshing(true);
@@ -147,20 +170,27 @@ export function usePolled<T>(load: () => Promise<T>, initial: T,
             setValue(await load());
         } finally {
             setRefreshing(false);
-            setLoaded(true);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [enabled, load]);
 
     useInit(() => {
-        refresh();
-        if (!enabled || !intervalSeconds)
+        if (!active) {
+            /* Being hidden is not the same as having nothing to show:
+               keep the last reading, and only clear it when whatever
+               produced it has actually stopped. */
+            if (!enabled)
+                setValue(initial);
             return null;
-        return window.setInterval(refresh, intervalSeconds * 1000);
-    }, [enabled, refresh, intervalSeconds], undefined,
+        }
+
+        refresh();
+        return intervalSeconds ? window.setInterval(refresh, intervalSeconds * 1000) : null;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [active, enabled, refresh, intervalSeconds], undefined,
             timer => { if (timer !== null) window.clearInterval(timer); });
 
-    return { value, refresh, refreshing, loaded };
+    return { value, refresh, refreshing };
 }
 
 /* Samba's version string, read once. */
@@ -181,6 +211,9 @@ export function useServerVersion(installed: boolean | null): string {
 export interface PathStatus {
     state: client.PathState;
     selinuxOk: boolean;
+    /* Room left on the filesystem holding the share, or null when it
+       could not be read. */
+    disk: client.DiskUsage | null;
 }
 
 export function usePathStatus(paths: string[]): {
@@ -193,8 +226,14 @@ export function usePathStatus(paths: string[]): {
     const load = useCallback(async () => {
         const entries = await Promise.all(paths.filter(Boolean).map(async path => {
             const state = await client.checkPath(path);
-            const selinuxOk = state === "ok" ? await client.checkSELinuxContext(path) : true;
-            return [path, { state, selinuxOk }] as const;
+            if (state !== "ok")
+                return [path, { state, selinuxOk: true, disk: null }] as const;
+
+            const [selinuxOk, disk] = await Promise.all([
+                client.checkSELinuxContext(path),
+                client.diskUsage(path),
+            ]);
+            return [path, { state, selinuxOk, disk }] as const;
         }));
         return Object.fromEntries(entries);
         // eslint-disable-next-line react-hooks/exhaustive-deps

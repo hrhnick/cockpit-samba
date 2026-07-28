@@ -248,6 +248,14 @@ export function deleteParam(section: ConfSection, key: string): void {
     section.entries = section.entries.filter(e => !(e.kind === "param" && e.key === norm));
 }
 
+/* Remove a whole family of parameters, e.g. every `recycle:...` setting.
+   The module they configure is being switched off, so leaving them behind
+   would be dead weight that reappears if it is switched on again. */
+function deleteParamFamily(section: ConfSection, prefix: string): void {
+    section.entries = section.entries.filter(e =>
+        !(e.kind === "param" && e.key?.startsWith(prefix)));
+}
+
 /* Set the parameter when `value` is non-empty, remove it otherwise. */
 export function setOrDeleteParam(section: ConfSection, label: string, value: string): void {
     if (value)
@@ -315,6 +323,47 @@ export interface Share {
     /* True for [homes], [printers] and [print$], which Samba handles
        specially and which have no directory of their own. */
     isSpecial: boolean;
+    /* False turns the share off without deleting its configuration. */
+    available: boolean;
+    /* Users and groups that may write even on a read-only share. */
+    writeList: string[];
+    /* Client addresses, names or subnets, in smb.conf's own syntax.
+       Kept as written: the syntax has more forms (EXCEPT clauses, netgroups,
+       partial addresses) than a structured editor would do justice to. */
+    hostsAllow: string;
+    hostsDeny: string;
+    /* Ownership and permissions given to files clients create. */
+    forceGroup: string;
+    createMask: string;
+    directoryMask: string;
+    /* Deleted files are moved aside instead of being destroyed. */
+    recycleBin: boolean;
+    /* The share is offered to macOS as a Time Machine backup target. */
+    timeMachine: boolean;
+}
+
+/* A share with nothing configured, which is both what the create dialog
+   starts from and Samba's own behaviour for a section that sets nothing. */
+export function emptyShare(): Share {
+    return {
+        name: "",
+        path: "",
+        comment: "",
+        readOnly: false,
+        browseable: true,
+        guestOk: false,
+        validUsers: [],
+        isSpecial: false,
+        available: true,
+        writeList: [],
+        hostsAllow: "",
+        hostsDeny: "",
+        forceGroup: "",
+        createMask: "",
+        directoryMask: "",
+        recycleBin: false,
+        timeMachine: false,
+    };
 }
 
 /* Parameters this UI writes, with the synonyms and inverses Samba
@@ -325,6 +374,69 @@ const READ_ONLY_KEYS = ["read only"];
 const WRITEABLE_KEYS = ["writeable", "writable", "write ok"];
 const BROWSEABLE_KEYS = ["browseable", "browsable"];
 const GUEST_KEYS = ["guest ok", "public"];
+const AVAILABLE_KEYS = ["available"];
+const WRITE_LIST_KEYS = ["write list"];
+const HOSTS_ALLOW_KEYS = ["hosts allow", "allow hosts"];
+const HOSTS_DENY_KEYS = ["hosts deny", "deny hosts"];
+const FORCE_GROUP_KEYS = ["force group", "group"];
+const CREATE_MASK_KEYS = ["create mask", "create mode"];
+const DIRECTORY_MASK_KEYS = ["directory mask", "directory mode"];
+const VFS_KEYS = ["vfs objects", "vfs object"];
+
+/* --- VFS modules ------------------------------------------------------ */
+
+/* `vfs objects` is not additive: a share that sets it overrides the
+ * [global] list outright rather than adding to it. Writing a bare
+ * `vfs objects = recycle` on a share would therefore quietly take file
+ * activity logging off that one share, so anything written here starts
+ * from the list the share would otherwise have inherited.
+ */
+export const AUDIT_MODULE = "full_audit";
+const RECYCLE_MODULE = "recycle";
+/* catia maps the characters macOS allows and Windows does not, fruit
+   speaks the Apple extensions, and streams_xattr stores the metadata
+   fruit produces. All three are needed, in this order. */
+const FRUIT_MODULES = ["catia", "fruit", "streams_xattr"];
+const MANAGED_MODULES = [RECYCLE_MODULE, ...FRUIT_MODULES];
+
+function vfsObjects(section: ConfSection | undefined): string[] {
+    return (getFirstParam(section, VFS_KEYS) ?? "")
+            .split(/\s+/)
+            .filter(Boolean);
+}
+
+/* The modules that actually apply to a section: its own list if it has
+   one, otherwise whatever [global] sets. */
+function effectiveVfsObjects(conf: SambaConf, section: ConfSection | undefined): string[] {
+    if (getFirstParam(section, VFS_KEYS) !== undefined)
+        return vfsObjects(section);
+    return vfsObjects(getSection(conf, GLOBAL));
+}
+
+/* Where deleted files go, and how the copy is kept. keeptree preserves
+   the folder structure so a restore lands back where it came from, and
+   versions keeps an older copy rather than overwriting it. */
+const RECYCLE_PARAMS: Record<string, string> = {
+    "recycle:repository": ".recycle/%U",
+    "recycle:keeptree": "yes",
+    "recycle:versions": "yes",
+    "recycle:touch": "no",
+    "recycle:directory_mode": "0770",
+    "recycle:exclude": "*.tmp *.temp *.o *.obj ~$*",
+};
+
+/* Only the per-share fruit options are written here. The module also has
+   global-only ones (fruit:model, fruit:aapl, fruit:nfs_aces); putting
+   those in a share section has no effect, so they are left to whoever
+   wants them in [global]. */
+const FRUIT_PARAMS: Record<string, string> = {
+    "fruit:time machine": "yes",
+    "fruit:metadata": "stream",
+    "fruit:posix_rename": "yes",
+    "fruit:veto_appledouble": "no",
+    "fruit:wipe_intentionally_left_blank_rfork": "yes",
+    "fruit:delete_empty_adfiles": "yes",
+};
 
 /* Resolve a boolean parameter the way Samba does: the share's own
    setting, else the [global] setting, else Samba's built-in default. */
@@ -361,6 +473,8 @@ export function parseValidUsers(raw: string | undefined): string[] {
 }
 
 export function readShare(conf: SambaConf, section: ConfSection): Share {
+    const modules = effectiveVfsObjects(conf, section);
+
     return {
         name: section.name,
         path: getFirstParam(section, PATH_KEYS) ?? "",
@@ -370,11 +484,61 @@ export function readShare(conf: SambaConf, section: ConfSection): Share {
         guestOk: resolveFlag(conf, section, GUEST_KEYS, false),
         validUsers: parseValidUsers(getParam(section, "valid users")),
         isSpecial: SPECIAL_SECTIONS.includes(section.key),
+        available: resolveFlag(conf, section, AVAILABLE_KEYS, true),
+        writeList: parseValidUsers(getFirstParam(section, WRITE_LIST_KEYS)),
+        hostsAllow: getFirstParam(section, HOSTS_ALLOW_KEYS) ?? "",
+        hostsDeny: getFirstParam(section, HOSTS_DENY_KEYS) ?? "",
+        forceGroup: getFirstParam(section, FORCE_GROUP_KEYS) ?? "",
+        createMask: getFirstParam(section, CREATE_MASK_KEYS) ?? "",
+        directoryMask: getFirstParam(section, DIRECTORY_MASK_KEYS) ?? "",
+        recycleBin: modules.includes(RECYCLE_MODULE),
+        /* The module alone only adds Apple metadata support; it is the
+           option that turns the share into a backup target. */
+        timeMachine: modules.includes("fruit") &&
+            parseBool(getParam(section, "fruit:time machine")) === true,
     };
 }
 
 export function readShares(conf: SambaConf): Share[] {
     return shareSections(conf).map(section => readShare(conf, section));
+}
+
+/* Turn the VFS modules this page manages on or off for one share,
+   preserving both the modules it does not manage and the ones the share
+   inherits from [global]. */
+function writeShareVfs(conf: SambaConf, section: ConfSection, share: Share): void {
+    const inherited = effectiveVfsObjects(conf, section);
+    const modules = inherited.filter(m => !MANAGED_MODULES.includes(m));
+
+    if (share.recycleBin) {
+        modules.push(RECYCLE_MODULE);
+        for (const [key, value] of Object.entries(RECYCLE_PARAMS))
+            setParam(section, key, value);
+    } else {
+        deleteParamFamily(section, "recycle:");
+    }
+
+    if (share.timeMachine) {
+        modules.push(...FRUIT_MODULES);
+        for (const [key, value] of Object.entries(FRUIT_PARAMS))
+            setParam(section, key, value);
+    } else {
+        deleteParamFamily(section, "fruit:");
+    }
+
+    /* A share with no list of its own keeps inheriting, rather than
+       gaining a copy of [global]'s that would then drift out of step. */
+    const hasOwnList = getFirstParam(section, VFS_KEYS) !== undefined;
+    const globalModules = vfsObjects(getSection(conf, GLOBAL));
+    const sameAsGlobal = [...modules].sort().join(" ") === [...globalModules].sort().join(" ");
+    if (!hasOwnList && sameAsGlobal)
+        return;
+
+    /* An empty list removes the parameter rather than writing a blank one,
+       so the share goes back to inheriting [global] — which is what
+       turning off the last module this page manages should mean. */
+    setOrDeleteParam(section, VFS_KEYS[0], modules.join(" "));
+    deleteParam(section, VFS_KEYS[1]);
 }
 
 /* Write a share back into the config, creating or renaming its section as
@@ -393,6 +557,14 @@ export function writeShare(conf: SambaConf, share: Share, previousName?: string)
             deleteParam(section, key);
     };
 
+    /* The same, but for parameters that are simply absent when unset,
+       rather than having a value for "off". */
+    const writeOptional = (keys: string[], value: string) => {
+        setOrDeleteParam(section, keys[0], value);
+        for (const key of keys.slice(1))
+            deleteParam(section, key);
+    };
+
     if (!share.isSpecial)
         write(PATH_KEYS, share.path);
     setOrDeleteParam(section, "comment", share.comment);
@@ -403,7 +575,42 @@ export function writeShare(conf: SambaConf, share: Share, previousName?: string)
     write(BROWSEABLE_KEYS, share.browseable ? "yes" : "no");
     write(GUEST_KEYS, share.guestOk ? "yes" : "no");
 
+    /* `available` defaults to yes, so an available share needs no
+       parameter at all; only turning one off has to be recorded. */
+    writeOptional(AVAILABLE_KEYS, share.available ? "" : "no");
+
     setOrDeleteParam(section, "valid users", share.validUsers.join(", "));
+    writeOptional(WRITE_LIST_KEYS, share.writeList.join(", "));
+    writeOptional(HOSTS_ALLOW_KEYS, share.hostsAllow.trim());
+    writeOptional(HOSTS_DENY_KEYS, share.hostsDeny.trim());
+    writeOptional(FORCE_GROUP_KEYS, share.forceGroup.trim());
+    writeOptional(CREATE_MASK_KEYS, share.createMask.trim());
+    writeOptional(DIRECTORY_MASK_KEYS, share.directoryMask.trim());
+
+    writeShareVfs(conf, section, share);
+
+    /* Samba's `map to guest` defaults to Never, which rejects the
+       anonymous login `guest ok` is supposed to allow. Ticking the box
+       would otherwise produce a share that looks configured for guests
+       and turns every one of them away. */
+    if (share.guestOk && !guestLoginsAccepted(conf))
+        acceptGuestLogins(conf);
+}
+
+/* --- Guest logins ----------------------------------------------------- */
+
+/* Whether the server maps an unknown user to the guest account at all.
+   Without this no `guest ok` share can be opened anonymously. */
+export function guestLoginsAccepted(conf: SambaConf): boolean {
+    const value = getParam(getSection(conf, GLOBAL), "map to guest") ?? "never";
+    return normalizeKey(value) !== "never";
+}
+
+export function acceptGuestLogins(conf: SambaConf): void {
+    const section = getSection(conf, GLOBAL) ?? addSection(conf, GLOBAL);
+    /* "Bad User" maps an unknown name to the guest account, and leaves a
+       wrong password for a known name as the failure it is. */
+    setParam(section, "map to guest", "Bad User");
 }
 
 /* --- [global] --------------------------------------------------------- */
@@ -464,14 +671,7 @@ const AUDIT_PARAMS: Record<string, string> = {
     "full_audit:priority": "NOTICE",
 };
 
-export const AUDIT_MODULE = "full_audit";
 export const AUDIT_IDENTIFIER = "smbd_audit";
-
-function vfsObjects(section: ConfSection | undefined): string[] {
-    return (getFirstParam(section, ["vfs objects", "vfs object"]) ?? "")
-            .split(/\s+/)
-            .filter(Boolean);
-}
 
 export function isAuditEnabled(conf: SambaConf): boolean {
     return vfsObjects(getSection(conf, GLOBAL)).includes(AUDIT_MODULE);
@@ -486,12 +686,10 @@ export function setAuditEnabled(conf: SambaConf, enabled: boolean): void {
         for (const [key, value] of Object.entries(AUDIT_PARAMS))
             setParam(section, key, value);
     } else {
-        for (const entry of [...section.entries])
-            if (entry.kind === "param" && entry.key?.startsWith("full_audit:"))
-                deleteParam(section, entry.label ?? "");
+        deleteParamFamily(section, "full_audit:");
     }
 
     /* Leave any other VFS modules (recycle, shadow_copy2, ...) in place. */
-    setOrDeleteParam(section, "vfs objects", modules.join(" "));
-    deleteParam(section, "vfs object");
+    setOrDeleteParam(section, VFS_KEYS[0], modules.join(" "));
+    deleteParam(section, VFS_KEYS[1]);
 }

@@ -26,17 +26,31 @@ import { useDialogs } from "dialogs";
 import { Providers } from "../src/components/providers";
 import { ShareDialog } from "../src/dialogs/share-dialog";
 import {
-    CreateDirectoryDialog, DeleteShareDialog, FixSELinuxDialog,
+    CreateDirectoryDialog, DeleteShareDialog, FixPermissionsDialog, FixSELinuxDialog,
 } from "../src/dialogs/share-actions";
+import { DisconnectClientDialog } from "../src/dialogs/disconnect-dialog";
 import { ManageAccessDialog } from "../src/dialogs/manage-access-dialog";
 import { BackupRestoreDialog, GlobalSettingsDialog } from "../src/dialogs/config-dialogs";
 import { LogsDialog } from "../src/dialogs/logs-dialog";
-import { parseConf, type Share } from "../src/samba/conf";
+import { emptyShare, parseConf, type Share } from "../src/samba/conf";
+import type { Connection } from "../src/samba/client";
 
 const share: Share = {
+    ...emptyShare(),
     name: "documents", path: "/srv/documents", comment: "Docs",
-    readOnly: false, browseable: true, guestOk: false,
-    validUsers: ["alice", "@staff"], isSpecial: false,
+    validUsers: ["alice", "@staff"],
+};
+
+/* One user and one group is the case ordinary ownership covers; several of
+   each is the case that needs an ACL, and they render different text. */
+const sharedShare: Share = {
+    ...share,
+    name: "team", validUsers: ["alice", "bob", "@staff"], writeList: ["carol"],
+};
+
+const connection: Connection = {
+    id: "1", username: "alice", machine: "192.168.1.20",
+    connectedAt: null, encryption: "AES-128-GCM", signing: "", shares: ["documents"],
 };
 
 const conf = parseConf("[global]\n\tworkgroup = WORKGROUP\n\n[documents]\n\tpath = /srv/documents\n");
@@ -47,11 +61,18 @@ const nothing = () => {};
 /* Each case is a marker that must appear in the DOM once the dialog is
    open, so that "did not throw" cannot pass for "rendered nothing". */
 const CASES: [string, React.ReactNode, string][] = [
-    ["create share", <ShareDialog share={null} shares={[share]} applyConf={noop} onPathsChanged={nothing} />, "share-name"],
-    ["edit share", <ShareDialog share={share} shares={[share]} applyConf={noop} onPathsChanged={nothing} />, "share-name"],
+    ["create share", <ShareDialog share={null} shares={[share]} guestLoginsAllowed applyConf={noop} onPathsChanged={nothing} />, "share-name"],
+    ["edit share", <ShareDialog share={share} shares={[share]} guestLoginsAllowed applyConf={noop} onPathsChanged={nothing} />, "share-name"],
+    /* The advanced fields are rendered collapsed, so they still have to
+       mount: a broken one would take the whole dialog down. */
+    ["edit share, more options", <ShareDialog share={sharedShare} shares={[sharedShare]} guestLoginsAllowed={false} applyConf={noop} onPathsChanged={nothing} />, "share-time-machine"],
     ["delete share", <DeleteShareDialog share={share} applyConf={noop} />, "Delete share"],
     ["create directory", <CreateDirectoryDialog share={share} onDone={nothing} />, "create-directory-dialog"],
+    ["fix permissions, ownership", <FixPermissionsDialog share={share} onDone={nothing} />, "fix-permissions-dialog"],
+    ["fix permissions, ACL", <FixPermissionsDialog share={sharedShare} onDone={nothing} />, "fix-permissions-dialog"],
+    ["fix permissions, nobody named", <FixPermissionsDialog share={{ ...share, validUsers: [] }} onDone={nothing} />, "fix-permissions-dialog"],
     ["fix selinux", <FixSELinuxDialog share={share} onDone={nothing} />, "fix-selinux-dialog"],
+    ["disconnect client", <DisconnectClientDialog connection={connection} onDone={nothing} />, "192.168.1.20"],
     ["manage access", <ManageAccessDialog canEdit />, "manage-access-dialog"],
     ["server settings", <GlobalSettingsDialog conf={conf} applyConf={noop} />, "global-settings-dialog"],
     ["backup and restore", <BackupRestoreDialog conf={conf} tag="1" />, "backup-restore-dialog"],
