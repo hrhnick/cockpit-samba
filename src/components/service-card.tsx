@@ -30,6 +30,7 @@ import { Flex } from "@patternfly/react-core/dist/esm/layouts/Flex/index.js";
 import { SyncAltIcon } from "@patternfly/react-icons";
 
 import { useAlerts } from "./alerts";
+import { ShareLabels } from "./labels";
 import { GlobalSettingsDialog, BackupRestoreDialog } from "../dialogs/config-dialogs";
 import { DisconnectClientDialog } from "../dialogs/disconnect-dialog";
 import { LogsDialog } from "../dialogs/logs-dialog";
@@ -131,7 +132,7 @@ export const ServiceCard = ({
 
     function discoveryHelp(): string {
         if (discoveryUnavailable)
-            return _("Windows computers find servers with WS-Discovery, which Samba does not answer. None of this machine's software repositories carry the wsdd service that answers it, so the share has to be opened by name from Windows, or wsdd installed by hand.");
+            return _("Windows computers find servers with WS-Discovery, which Samba does not answer. Neither wsdd nor wsdd2, which do answer it, is offered by this machine's software repositories — package lists that have not been refreshed in a while are worth checking first. Shares still work when opened by name, as \\\\server\\share.");
         if (discovery.installed === false)
             return _("Lets Windows computers find this server in their Network view. Turning it on installs the wsdd service.");
         return _("Lets Windows computers find this server in their Network view.");
@@ -223,11 +224,7 @@ export const ServiceCard = ({
         columns: [
             { title: connection.username || <span className="samba-subtle">{_("Guest")}</span> },
             {
-                title: (
-                    <Flex spaceItems={{ default: "spaceItemsSm" }}>
-                        {connection.shares.map(share => <Label key={share} isCompact>{share}</Label>)}
-                    </Flex>
-                )
+                title: <ShareLabels shares={connection.shares} />
             },
             { title: connection.machine },
             { title: connection.connectedAt ? timeformat.dateTime(connection.connectedAt) : "" },

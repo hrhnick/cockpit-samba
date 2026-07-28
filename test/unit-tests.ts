@@ -16,7 +16,7 @@ import test from "node:test";
 
 import {
     acceptGuestLogins, addSection, emptyShare, getParam, getSection, globalText,
-    guestAccount, guestsShutOut,
+    guestAccount, guestsShutOut, sharePrincipals,
     guestLoginsAccepted, isAuditEnabled, normalizeKey, parseBool, parseConf,
     readShares, removeSection, serializeConf, setAuditEnabled, setGlobalText,
     renameSection, setParam, writeShare, type Share,
@@ -511,22 +511,22 @@ test("the model refuses config injection through values and names", () => {
 test("a user list shuts out the guests the share claims to allow", () => {
     const conf = parseConf("[global]\n\tmap to guest = Bad User\n\n[a]\n\tpath = /srv\n" +
                            "\tguest ok = yes\n\tvalid users = alice\n");
-    assert.equal(guestsShutOut(conf, readShares(conf)[0]), true);
+    assert.equal(guestsShutOut(readShares(conf)[0], guestAccount(conf)), true);
 
     /* Naming the guest account is the legitimate way to have both. */
     const fixed = parseConf("[a]\n\tpath = /srv\n\tguest ok = yes\n\tvalid users = alice, nobody\n");
-    assert.equal(guestsShutOut(fixed, readShares(fixed)[0]), false);
+    assert.equal(guestsShutOut(readShares(fixed)[0], guestAccount(fixed)), false);
 
     /* No list, no gate. */
     const open = parseConf("[a]\n\tpath = /srv\n\tguest ok = yes\n");
-    assert.equal(guestsShutOut(open, readShares(open)[0]), false);
+    assert.equal(guestsShutOut(readShares(open)[0], guestAccount(open)), false);
 });
 
 test("the guest account setting is honoured when checking", () => {
     const conf = parseConf("[global]\n\tguest account = smbguest\n\n" +
                            "[a]\n\tpath = /srv\n\tguest ok = yes\n\tvalid users = smbguest\n");
     assert.equal(guestAccount(conf), "smbguest");
-    assert.equal(guestsShutOut(conf, readShares(conf)[0]), false);
+    assert.equal(guestsShutOut(readShares(conf)[0], guestAccount(conf)), false);
 });
 
 /* --- Time Machine size limit ------------------------------------------- */
@@ -544,4 +544,14 @@ test("the Time Machine size limit rides along with the share", () => {
     /* Turning Time Machine off takes the limit with it. */
     const off = rewrite(on.text, { timeMachine: false });
     assert.doesNotMatch(off.text, /fruit:/);
+});
+
+test("a share's principals are its users and its writers, without repeats", () => {
+    assert.deepEqual(sharePrincipals({ ...emptyShare(), validUsers: ["alice", "@staff"] }),
+                     ["alice", "@staff"]);
+    /* Someone on both lists is one account, not two. */
+    assert.deepEqual(sharePrincipals({
+        ...emptyShare(), validUsers: ["alice", "bob"], writeList: ["bob", "carol"],
+    }), ["alice", "bob", "carol"]);
+    assert.deepEqual(sharePrincipals(emptyShare()), []);
 });

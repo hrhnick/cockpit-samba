@@ -37,10 +37,10 @@ import {
 } from "@patternfly/react-core/dist/esm/components/Modal/index.js";
 import { SearchInput } from "@patternfly/react-core/dist/esm/components/SearchInput/index.js";
 import { Toolbar, ToolbarContent, ToolbarItem } from "@patternfly/react-core/dist/esm/components/Toolbar/index.js";
-import { Flex } from "@patternfly/react-core/dist/esm/layouts/Flex/index.js";
 import { SearchIcon } from "@patternfly/react-icons";
 import { SortByDirection } from "@patternfly/react-table";
 
+import { ShareLabels } from "../components/labels";
 import * as client from "../samba/client";
 import type { SambaUser } from "../samba/client";
 import type { Share } from "../samba/conf";
@@ -225,11 +225,7 @@ export const ManageAccessDialog = ({ canEdit, shares }: {
                     const names = reachableShares(user, shares);
                     if (names.length === 0)
                         return <span className="samba-subtle">{_("None")}</span>;
-                    return (
-                        <Flex spaceItems={{ default: "spaceItemsSm" }}>
-                            {names.map(name => <Label key={name} isCompact>{name}</Label>)}
-                        </Flex>
-                    );
+                    return <ShareLabels shares={names} />;
                 })(),
             },
             {
