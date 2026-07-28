@@ -3,13 +3,12 @@
  * SPDX-License-Identifier: MIT
  */
 
-import React, { useEffect, useState } from "react";
+import React from "react";
 
 import cockpit from "cockpit";
 import { useDialogs } from "dialogs";
 import { KebabDropdown } from "cockpit-components-dropdown";
 import { ListingTable } from "cockpit-components-table";
-import { install_dialog } from "cockpit-components-install-dialog";
 import * as timeformat from "timeformat";
 
 import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
@@ -35,9 +34,8 @@ import { GlobalSettingsDialog, BackupRestoreDialog } from "../dialogs/config-dia
 import { DisconnectClientDialog } from "../dialogs/disconnect-dialog";
 import { LogsDialog } from "../dialogs/logs-dialog";
 import { ManageAccessDialog } from "../dialogs/manage-access-dialog";
-import * as client from "../samba/client";
 import { errorString, type Connection } from "../samba/client";
-import { useDiscoveryService, type ServiceState } from "../samba/hooks";
+import type { ServiceState } from "../samba/hooks";
 import { readShares, type SambaConf } from "../samba/conf";
 
 const _ = cockpit.gettext;
@@ -84,59 +82,6 @@ export const ServiceCard = ({
     const alert = useAlerts();
     const status = stateLabel(service.state);
     const isRunning = service.state === "running";
-
-    const discovery = useDiscoveryService();
-    const [discoveryBusy, setDiscoveryBusy] = useState(false);
-    /* The package that could be installed: null while unknown, "" once we
-       know no repository has one. Asked for only when the card is open and
-       the daemon is missing, so an ordinary page load costs nothing. */
-    const [discoveryPackage, setDiscoveryPackage] = useState<string | null>(null);
-
-    useEffect(() => {
-        if (isExpanded && discovery.installed === false && discoveryPackage === null)
-            client.findDiscoveryPackage().then(name => setDiscoveryPackage(name ?? ""),
-                                               () => setDiscoveryPackage(""));
-    }, [isExpanded, discovery.installed, discoveryPackage]);
-
-    /* Not packaged by every distribution — Raspberry Pi OS and older
-       Debian have neither name — so the switch says so rather than
-       offering an installation that cannot happen. */
-    const discoveryUnavailable = discovery.installed === false && discoveryPackage === "";
-
-    /* Turn the WS-Discovery responder on or off, installing it first if
-       the machine does not have it. Installation adds a unit the page has
-       never seen, so it starts over like the Samba install does. */
-    async function setDiscovery(on: boolean) {
-        setDiscoveryBusy(true);
-        try {
-            if (discovery.unit) {
-                await client.setUnitRunning(discovery.unit, on);
-            } else if (discoveryPackage) {
-                await install_dialog(discoveryPackage);
-                await client.setUnitRunning(`${discoveryPackage}.service`, true).catch(() => null);
-                window.location.reload();
-            }
-        } catch (exception) {
-            /* A cancelled install dialog rejects with undefined; that is
-               a choice, not a failure. */
-            if (exception !== undefined)
-                alert({
-                    variant: "danger",
-                    title: _("Failed to change Windows discovery"),
-                    detail: errorString(exception),
-                });
-        } finally {
-            setDiscoveryBusy(false);
-        }
-    }
-
-    function discoveryHelp(): string {
-        if (discoveryUnavailable)
-            return _("Windows computers find servers with WS-Discovery, which Samba does not answer. Neither wsdd nor wsdd2, which do answer it, is offered by this machine's software repositories — package lists that have not been refreshed in a while are worth checking first. Shares still work when opened by name, as \\\\server\\share.");
-        if (discovery.installed === false)
-            return _("Lets Windows computers find this server in their Network view. Turning it on installs the wsdd service.");
-        return _("Lets Windows computers find this server in their Network view.");
-    }
 
     /* Report a failed service action, which otherwise leaves the button
        looking as though nothing happened. */
@@ -299,21 +244,6 @@ export const ServiceCard = ({
                                         onChange={(_event, checked) => attempt(
                                             _("Failed to change whether Samba starts on boot"),
                                             () => service.setEnabled(checked))()} />
-                            </DescriptionListDescription>
-                        </DescriptionListGroup>
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>{_("Windows discovery")}</DescriptionListTerm>
-                            <DescriptionListDescription>
-                                <Flex spaceItems={{ default: "spaceItemsMd" }}
-                                      alignItems={{ default: "alignItemsCenter" }}>
-                                    <Switch id="samba-discovery"
-                                            aria-label={_("Windows discovery")}
-                                            isChecked={discovery.installed === true && discovery.running}
-                                            isDisabled={!canEdit || discoveryBusy ||
-                                                discovery.installed === null || discoveryUnavailable}
-                                            onChange={(_event, checked) => setDiscovery(checked)} />
-                                    <span className="samba-subtle">{discoveryHelp()}</span>
-                                </Flex>
                             </DescriptionListDescription>
                         </DescriptionListGroup>
                     </DescriptionList>

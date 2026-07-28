@@ -20,7 +20,6 @@
 
 import cockpit from "cockpit";
 import { fsinfo } from "cockpit/fsinfo";
-import { getPackageManager } from "packagemanager";
 
 import { serializeConf, type SambaConf } from "./conf";
 import { fcontextPattern, isProtectedPath, normalizePath } from "./paths";
@@ -162,44 +161,6 @@ export async function detectServiceUnit(): Promise<string | null> {
 export async function serverVersion(): Promise<string> {
     const out = await runParsed(["smbd", "--version"]).catch(() => "");
     return out.trim().replace(/^Version\s+/i, "");
-}
-
-/* Enable and start a unit together, or stop and disable it. Used for the
-   helper services this page can turn on, where running-but-not-enabled
-   would quietly not survive a reboot. */
-export async function setUnitRunning(unit: string, running: boolean): Promise<void> {
-    await run(["systemctl", running ? "enable" : "disable", "--now", unit]);
-}
-
-/* --- Windows discovery ------------------------------------------------- */
-
-/* Windows finds servers in its Network view through WS-Discovery, which
-   Samba does not speak; wsdd answers those queries for it. Without it a
-   share works but the server never appears in Explorer, which reads as
-   "broken" however healthy the config is. */
-export const DISCOVERY_UNITS = ["wsdd.service", "wsdd2.service"];
-
-/* The daemon goes by two names: christgau's Python wsdd, and the C
-   reimplementation packaged as wsdd2. Which one a distribution carries —
-   if either — varies, and Raspberry Pi OS and older Debian carry
-   neither, so the name cannot simply be assumed. */
-const DISCOVERY_PACKAGES = ["wsdd", "wsdd2"];
-
-/* The first WS-Discovery package this machine could actually install, or
- * null when no configured repository offers one. Asking first means the
- * page can say so plainly, instead of opening an install dialog that
- * fails with "not available from any repository".
- */
-export async function findDiscoveryPackage(): Promise<string | null> {
-    const manager = await getPackageManager().catch(() => null);
-    if (!manager)
-        return null;
-
-    for (const name of DISCOVERY_PACKAGES) {
-        if (await manager.is_available([name]).catch(() => false))
-            return name;
-    }
-    return null;
 }
 
 /* --- Firewall ---------------------------------------------------------- */

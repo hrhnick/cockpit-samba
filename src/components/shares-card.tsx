@@ -10,15 +10,9 @@ import { useDialogs } from "dialogs";
 import { KebabDropdown } from "cockpit-components-dropdown";
 import { ListingTable } from "cockpit-components-table";
 import { EmptyStatePanel } from "cockpit-components-empty-state";
-import { fmt_to_fragments } from "utils";
 
-import { Alert, AlertActionLink } from "@patternfly/react-core/dist/esm/components/Alert/index.js";
 import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
 import { Card, CardHeader, CardTitle } from "@patternfly/react-core/dist/esm/components/Card/index.js";
-import { ClipboardCopy } from "@patternfly/react-core/dist/esm/components/ClipboardCopy/index.js";
-import {
-    DescriptionList, DescriptionListDescription, DescriptionListGroup, DescriptionListTerm,
-} from "@patternfly/react-core/dist/esm/components/DescriptionList/index.js";
 import { Divider } from "@patternfly/react-core/dist/esm/components/Divider/index.js";
 import { DropdownItem } from "@patternfly/react-core/dist/esm/components/Dropdown/index.js";
 import { Icon } from "@patternfly/react-core/dist/esm/components/Icon/index.js";
@@ -27,127 +21,78 @@ import { SearchInput } from "@patternfly/react-core/dist/esm/components/SearchIn
 import { Toolbar, ToolbarContent, ToolbarItem } from "@patternfly/react-core/dist/esm/components/Toolbar/index.js";
 import { Tooltip } from "@patternfly/react-core/dist/esm/components/Tooltip/index.js";
 import { Flex } from "@patternfly/react-core/dist/esm/layouts/Flex/index.js";
-import { Stack } from "@patternfly/react-core/dist/esm/layouts/Stack/index.js";
 import { ExclamationCircleIcon, ExclamationTriangleIcon, FolderIcon, SearchIcon } from "@patternfly/react-icons";
 import { SortByDirection } from "@patternfly/react-table";
 
-import { PrincipalLabels } from "./labels";
 import { ShareDialog } from "../dialogs/share-dialog";
+import { DeleteShareDialog, FixPermissionsDialog } from "../dialogs/share-actions";
 import {
-    CreateDirectoryDialog, DeleteShareDialog, FixPermissionsDialog, FixSELinuxDialog,
-} from "../dialogs/share-actions";
+    PROBLEM_SUMMARY, ShareDetailsDialog, shareProblem,
+} from "../dialogs/share-details-dialog";
 import type { Connection } from "../samba/client";
 import type { PathStatus } from "../samba/hooks";
-import { guestsShutOut, sharePrincipals, type SambaConf, type Share } from "../samba/conf";
+import { sharePrincipals, type SambaConf, type Share } from "../samba/conf";
 
 const _ = cockpit.gettext;
 
-/* The address a client types to reach the share. Cockpit may be managing a
-   different machine than the one serving the page, in which case the
-   transport knows its name. */
-function serverAddress(): string {
-    const host = cockpit.transport.host;
-    return !host || host === "localhost" ? window.location.hostname : host;
-}
-
-type Problem = "missing" | "not-a-directory" | "selinux" | null;
-
-function shareProblem(share: Share, status: PathStatus | undefined): Problem {
-    if (share.isSpecial || !share.path || !status)
-        return null;
-    if (status.state === "missing")
-        return "missing";
-    if (status.state === "not-a-directory")
-        return "not-a-directory";
-    if (!status.selinuxOk)
-        return "selinux";
-    return null;
-}
-
-const PROBLEM_SUMMARY: Record<Exclude<Problem, null>, () => string> = {
-    missing: () => _("The folder does not exist"),
-    "not-a-directory": () => _("The path is not a folder"),
-    selinux: () => _("SELinux is blocking access to the folder"),
-};
-
-/* The banner shown inside an expanded row when the share cannot work as
-   configured, with the fix next to the explanation. */
-const ProblemAlert = ({ share, problem, canEdit, onFixed }: {
-    share: Share;
-    problem: Exclude<Problem, null>;
-    canEdit: boolean;
-    onFixed: () => void;
-}) => {
-    const Dialogs = useDialogs();
-
-    if (problem === "not-a-directory")
-        return (
-            <Alert isInline variant="danger" title={PROBLEM_SUMMARY[problem]()}>
-                {cockpit.format(_("$0 exists but is a file, so it cannot be shared. Point the share at a folder instead."),
-                                share.path)}
-            </Alert>
-        );
-
-    const isMissing = problem === "missing";
-    return (
-        <Alert isInline
-               variant={isMissing ? "danger" : "warning"}
-               title={PROBLEM_SUMMARY[problem]()}
-               actionLinks={canEdit
-                   ? (
-                       <AlertActionLink onClick={() => Dialogs.show(isMissing
-                           ? <CreateDirectoryDialog share={share} onDone={onFixed} />
-                           : <FixSELinuxDialog share={share} onDone={onFixed} />)}>
-                           {isMissing ? _("Create folder") : _("Fix it")}
-                       </AlertActionLink>
-                   )
-                   : undefined}>
-            {isMissing
-                ? cockpit.format(_("Clients connecting to this share get an error until $0 exists."), share.path)
-                : cockpit.format(_("Samba is not allowed to read $0, so clients get a permission error."), share.path)}
-        </Alert>
-    );
-};
-
-const ShareActions = ({ share, shares, guestLoginsAllowed, guestAccount, applyConf, onPathsChanged }: {
+const ShareActions = ({
+    share, shares, status, inUse, guestLoginsAllowed, guestAccount, applyConf, onPathsChanged, canEdit,
+}: {
     share: Share;
     shares: Share[];
+    status: PathStatus | undefined;
+    inUse: number;
     guestLoginsAllowed: boolean;
     guestAccount: string;
     applyConf: (mutate: (conf: SambaConf) => void) => Promise<void>;
     onPathsChanged: () => void;
+    canEdit: boolean;
 }) => {
     const Dialogs = useDialogs();
 
+    /* Reading is for everyone; only changing anything needs admin. */
     const items = [
-        <DropdownItem key="edit"
+        <DropdownItem key="details"
                       onClick={() => Dialogs.show(
-                          <ShareDialog share={share} shares={shares}
-                                       guestLoginsAllowed={guestLoginsAllowed}
-                                       guestAccount={guestAccount}
-                                       applyConf={applyConf}
-                                       onPathsChanged={onPathsChanged} />)}>
-            {_("Edit share")}
+                          <ShareDetailsDialog share={share} status={status} inUse={inUse}
+                                              guestLoginsAllowed={guestLoginsAllowed}
+                                              guestAccount={guestAccount}
+                                              canEdit={canEdit}
+                                              onFixed={onPathsChanged} />)}>
+            {_("View details")}
         </DropdownItem>,
     ];
 
-    /* Only worth offering where there is a folder to fix and accounts to
-       grant it to. */
-    if (!share.isSpecial && share.path && sharePrincipals(share).length > 0)
+    if (canEdit) {
         items.push(
-            <DropdownItem key="permissions"
+            <DropdownItem key="edit"
                           onClick={() => Dialogs.show(
-                              <FixPermissionsDialog share={share} onDone={onPathsChanged} />)}>
-                {_("Fix folder permissions")}
+                              <ShareDialog share={share} shares={shares}
+                                           guestLoginsAllowed={guestLoginsAllowed}
+                                           guestAccount={guestAccount}
+                                           applyConf={applyConf}
+                                           onPathsChanged={onPathsChanged} />)}>
+                {_("Edit share")}
             </DropdownItem>);
 
-    items.push(
-        <Divider key="separator" />,
-        <DropdownItem key="delete" isDanger
-                      onClick={() => Dialogs.show(
-                          <DeleteShareDialog share={share} applyConf={applyConf} />)}>
-            {_("Delete share")}
-        </DropdownItem>);
+        /* Only worth offering where there is a folder to fix and accounts
+           to grant it to. */
+        if (!share.isSpecial && share.path && sharePrincipals(share).length > 0)
+            items.push(
+                <DropdownItem key="permissions"
+                              onClick={() => Dialogs.show(
+                                  <FixPermissionsDialog share={share} onDone={onPathsChanged} />)}>
+                    {_("Fix folder permissions")}
+                </DropdownItem>);
+
+        items.push(
+            <Divider key="separator" />,
+            <DropdownItem key="delete" isDanger
+                          onClick={() => Dialogs.show(
+                              <DeleteShareDialog share={share} applyConf={applyConf} />)}>
+                {_("Delete share")}
+            </DropdownItem>);
+    }
 
     return <KebabDropdown dropdownItems={items} />;
 };
@@ -221,8 +166,6 @@ export const SharesCard = ({
             </Flex>
         );
 
-        const disk = pathStatus[share.path]?.disk;
-
         return {
             props: { key: share.name, "data-row-id": share.name },
             columns: [
@@ -231,104 +174,19 @@ export const SharesCard = ({
                 { title: access },
                 { title: share.comment, props: { width: 20 as const } },
                 {
-                    title: canEdit
-                        ? (
-                            <ShareActions share={share} shares={shares}
-                                          guestLoginsAllowed={guestLoginsAllowed}
-                                          guestAccount={guestAccount}
-                                          applyConf={applyConf}
-                                          onPathsChanged={onPathsChanged} />
-                        )
-                        : null,
+                    title: (
+                        <ShareActions share={share} shares={shares}
+                                      status={pathStatus[share.path]}
+                                      inUse={inUse}
+                                      guestLoginsAllowed={guestLoginsAllowed}
+                                      guestAccount={guestAccount}
+                                      applyConf={applyConf}
+                                      onPathsChanged={onPathsChanged}
+                                      canEdit={canEdit} />
+                    ),
                     props: { className: "pf-v6-c-table__action" },
                 },
             ],
-            expandedContent: (
-                <Stack hasGutter>
-                    {problem && (
-                        <ProblemAlert share={share} problem={problem} canEdit={canEdit}
-                                      onFixed={onPathsChanged} />
-                    )}
-                    {!share.available && (
-                        <Alert isInline variant="info" title={_("This share is turned off")}>
-                            {_("It keeps its configuration, but Samba does not offer it to clients.")}
-                        </Alert>
-                    )}
-                    {share.guestOk && !guestLoginsAllowed && (
-                        <Alert isInline variant="warning" title={_("Guests are allowed but cannot log in")}>
-                            {fmt_to_fragments(
-                                _("This share allows guests, but the server's $0 setting turns unknown users away before they reach it. Saving the share from $1 sets it."),
-                                <code>map to guest</code>, <strong>{_("Edit share")}</strong>)}
-                        </Alert>
-                    )}
-                    {guestLoginsAllowed && guestsShutOut(share, guestAccount) && (
-                        <Alert isInline variant="warning" title={_("Guests are allowed but the user list keeps them out")}>
-                            {cockpit.format(
-                                _("Guests connect as the $0 account, and \"Who can connect\" does not include it. Edit the share and add $0, or clear the list."),
-                                guestAccount)}
-                        </Alert>
-                    )}
-                    <DescriptionList isHorizontal isCompact>
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>{_("Who can connect")}</DescriptionListTerm>
-                            <DescriptionListDescription>
-                                {share.validUsers.length === 0
-                                    ? _("Every user with a Samba password")
-                                    : <PrincipalLabels principals={share.validUsers} />}
-                            </DescriptionListDescription>
-                        </DescriptionListGroup>
-                        {share.writeList.length > 0 && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>{_("May write")}</DescriptionListTerm>
-                                <DescriptionListDescription>
-                                    <PrincipalLabels principals={share.writeList} />
-                                </DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-                        {(share.hostsAllow || share.hostsDeny) && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>{_("Client addresses")}</DescriptionListTerm>
-                                <DescriptionListDescription>
-                                    {share.hostsAllow && (
-                                        <div>{cockpit.format(_("Allowed: $0"), share.hostsAllow)}</div>
-                                    )}
-                                    {share.hostsDeny && (
-                                        <div>{cockpit.format(_("Refused: $0"), share.hostsDeny)}</div>
-                                    )}
-                                </DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>{_("Connected clients")}</DescriptionListTerm>
-                            <DescriptionListDescription>{inUse}</DescriptionListDescription>
-                        </DescriptionListGroup>
-                        {disk && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>{_("Free space")}</DescriptionListTerm>
-                                <DescriptionListDescription>
-                                    {cockpit.format(_("$0 free of $1"),
-                                                    cockpit.format_bytes(disk.available),
-                                                    cockpit.format_bytes(disk.total))}
-                                </DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-                        {share.path && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>{_("Network address")}</DescriptionListTerm>
-                                <DescriptionListDescription>
-                                    {/* Read only, but still selectable and
-                                        copyable: it has to be typed into a
-                                        client exactly. */}
-                                    <ClipboardCopy isReadOnly hoverTip={_("Copy")} clickTip={_("Copied")}
-                                                   variant="inline-compact">
-                                        {`\\\\${serverAddress()}\\${share.name}`}
-                                    </ClipboardCopy>
-                                </DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-                    </DescriptionList>
-                </Stack>
-            ),
         };
     });
 

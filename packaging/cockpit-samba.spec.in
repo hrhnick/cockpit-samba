@@ -35,15 +35,16 @@ BuildRequires: nodejs-esbuild
 %endif
 
 Requires: cockpit-bridge
-# The page offers to install Samba itself when it is missing, so this is a
-# weak dependency: the module is useful on a machine that does not have a
-# file server yet, and pointless on one that never will.
-Recommends: samba
+# samba is a hard dependency: every part of the page manages it, and
+# samba-common-tools carries the tools the page runs (testparm,
+# smbpasswd, pdbedit, smbstatus, smbcontrol).
+Requires: samba
+Requires: samba-common-tools
 # setfacl, which sharing a folder with several users needs
 Recommends: acl
 # answers the WS-Discovery queries that make the server visible in
-# Windows' Network view; the page offers to install it
-Suggests: wsdd
+# Windows' Network view
+Recommends: wsdd
 
 %{NPM_PROVIDES}
 
