@@ -32,10 +32,10 @@ class TestApplication(testlib.MachineCase):
         b.wait_in_text("#samba-service .pf-v6-c-card__title-text", "Samba server")
         b.wait_text("#samba-service-state", "Running")
 
-        # The details and the connection list are behind the card's expander
+        # The version and uptime are behind the card's expander; the
+        # connection list lives in the Manage access dialog now
         b.click("#samba-service-toggle")
-        b.wait_visible("#samba-service-enabled")
-        b.wait_in_text("#samba-service", "No client is connected")
+        b.wait_in_text("#samba-service", "Running since")
 
     def testShareLifecycle(self):
         b = self.browser

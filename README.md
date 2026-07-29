@@ -94,15 +94,16 @@ Reload the browser and the page appears under *Samba shares*.
 - Give a local account a Samba password, change it, or take its access away
 - See at a glance which accounts can connect, and which shares each one
   would reach
+- See who is connected right now — including guests — from where, and since
+  when
 - Links to Cockpit's Accounts page for creating the accounts themselves
 
 **Server**
 
-- Status, version and uptime; start, stop and restart; start on boot
+- Status, version and uptime; start, stop and restart. *Manage service* jumps
+  to Cockpit's own Services page for everything else, like starting on boot
 - Notices a firewalld that is blocking SMB and offers to open it, and shows
   the warnings `testparm` has about the configuration
-- Who is connected, which shares they have open, and whether the connection is
-  encrypted and signed; disconnect a client
 - Edit the `[global]` section, with `testparm` validating every change
 - Download the configuration, or restore one from a file
 - Follow the Samba journal, and optionally log file activity through the

@@ -21,6 +21,7 @@ import React, { useCallback, useState } from "react";
 import cockpit from "cockpit";
 import { useDialogs } from "dialogs";
 import { useInit } from "hooks";
+import * as timeformat from "timeformat";
 import { KebabDropdown } from "cockpit-components-dropdown";
 import { ListingTable } from "cockpit-components-table";
 import { EmptyStatePanel } from "cockpit-components-empty-state";
@@ -41,7 +42,8 @@ import { DialogFrame } from "../components/dialog";
 import { ShareLabels } from "../components/labels";
 import { FilterInput, NoMatchState, useSearch } from "../components/search";
 import * as client from "../samba/client";
-import type { SambaUser } from "../samba/client";
+import type { Connection, SambaUser } from "../samba/client";
+import { CONNECTION_POLL_SECONDS, usePolled } from "../samba/hooks";
 import { groupEntryName, isGroupEntry, type Share } from "../samba/conf";
 
 const _ = cockpit.gettext;
@@ -76,6 +78,13 @@ export const ManageAccessDialog = ({ canEdit, shares }: {
     const [view, setView] = useState<View>({ name: "list" });
     const { filter, setFilter, needle, filtered } = useSearch(users, (user, needle) =>
         user.name.toLowerCase().includes(needle) || user.fullName.toLowerCase().includes(needle));
+
+    /* Who is connected right now, polled while the dialog is open. The
+       dialog fetches this itself: Dialogs.show() captures props at the
+       moment of the click, so anything passed in would go stale. */
+    const loadConnections = useCallback(() => client.getConnections(), []);
+    const { value: connections } =
+        usePolled<Connection[]>(loadConnections, [], true, CONNECTION_POLL_SECONDS);
     /* Failures loading the list; failures inside the password and remove
        views are shown by their DialogFrame. */
     const [error, setError] = useState<string | null>(null);
@@ -177,14 +186,37 @@ export const ManageAccessDialog = ({ canEdit, shares }: {
         { title: _("Full name"), sortable: true },
         { title: _("Samba access"), sortable: true },
         { title: _("Shares") },
+        { title: _("Connected"), sortable: true },
+        { title: _("From") },
+        { title: _("Connected since") },
         { title: "", props: { screenReaderText: _("Actions") } },
     ];
 
-    const rows = filtered.map(user => ({
+    /* The three connection cells, shared by account rows and guest rows.
+       One person can be connected from several machines at once; the
+       row is as old as the oldest of those sessions. */
+    const connectionCells = (mine: Connection[]) => {
+        const times = mine.map(c => c.connectedAt).filter((d): d is Date => d !== null);
+        const earliest = times.length
+            ? new Date(Math.min(...times.map(d => d.getTime())))
+            : null;
+        return [
+            {
+                title: mine.length > 0
+                    ? <Label color="green" isCompact>{_("Yes")}</Label>
+                    : <span className="samba-subtle">{_("No")}</span>,
+                sortKey: mine.length > 0 ? "1" : "0",
+            },
+            { title: [...new Set(mine.map(c => c.machine).filter(Boolean))].join(", ") },
+            { title: earliest ? timeformat.dateTime(earliest) : "" },
+        ];
+    };
+
+    const userRows = filtered.map(user => ({
         props: { key: user.name, "data-row-id": user.name },
         columns: [
-            { title: user.name, sortKey: user.name, props: { width: 20 as const } },
-            { title: user.fullName, sortKey: user.fullName, props: { width: 25 as const } },
+            { title: user.name, sortKey: user.name, props: { width: 15 as const } },
+            { title: user.fullName, sortKey: user.fullName, props: { width: 20 as const } },
             {
                 title: user.hasPassword
                     ? <Label color="green">{_("Allowed")}</Label>
@@ -202,6 +234,7 @@ export const ManageAccessDialog = ({ canEdit, shares }: {
                     return <ShareLabels shares={names} />;
                 })(),
             },
+            ...connectionCells(connections.filter(c => c.username === user.name)),
             {
                 title: canEdit
                     ? (
@@ -224,6 +257,33 @@ export const ManageAccessDialog = ({ canEdit, shares }: {
             },
         ],
     }));
+
+    /* Sessions that belong to no listed account: guests (who arrive as
+       the guest account, usually nobody) and names this machine does not
+       know. They cannot be managed here, but who is on the server and
+       from where belongs in this table. */
+    const userNames = new Set(users.map(user => user.name));
+    const guestRows = connections
+            .filter(connection => !userNames.has(connection.username))
+            .filter(connection => !needle ||
+                (connection.username || _("Guest")).toLowerCase().includes(needle) ||
+                connection.machine.toLowerCase().includes(needle))
+            .map(connection => ({
+                props: { key: "session-" + connection.id, "data-row-id": "session-" + connection.id },
+                columns: [
+                    {
+                        title: <span className="samba-subtle">{connection.username || _("Guest")}</span>,
+                        sortKey: connection.username || "guest",
+                    },
+                    { title: "" },
+                    { title: <Label color="grey">{_("Guest")}</Label>, sortKey: "" },
+                    { title: "" },
+                    ...connectionCells([connection]),
+                    { title: null, props: { className: "pf-v6-c-table__action" } },
+                ],
+            }));
+
+    const rows = [...userRows, ...guestRows];
 
     return (
         <Modal id="manage-access-dialog" isOpen position="top" variant="large"

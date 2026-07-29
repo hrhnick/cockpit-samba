@@ -22,15 +22,11 @@ import {
     guestAccount, guestLoginsAccepted, parseConf, readShares, serializeConf, type SambaConf,
 } from "./samba/conf";
 import {
+    CONNECTION_POLL_SECONDS,
     useSambaConf, useSambaService, useServerVersion, usePathStatus, usePolled, useSuperuser,
 } from "./samba/hooks";
 
 const _ = cockpit.gettext;
-
-/* How often to re-run smbstatus while the service card is open. Client
-   connections come and go without any notification we could subscribe
-   to, so this is the only way to keep the list current. */
-const CONNECTION_POLL_SECONDS = 15;
 
 export const Application = () => {
     const canEdit = useSuperuser();
@@ -75,7 +71,7 @@ export const Application = () => {
     }, [service.installed, tag]);
 
     const loadConnections = useCallback(() => client.getConnections(), []);
-    const { value: connections, refresh: refreshConnections, refreshing } =
+    const { value: connections, refresh: refreshConnections } =
         usePolled<client.Connection[]>(loadConnections, [], isRunning, CONNECTION_POLL_SECONDS);
 
     const shares = conf ? readShares(conf) : [];
@@ -163,8 +159,6 @@ export const Application = () => {
                                      tag={tag}
                                      applyConf={applyConf}
                                      connections={connections}
-                                     refreshConnections={refreshConnections}
-                                     isRefreshing={refreshing}
                                      canEdit={canEdit}
                                      isExpanded={serviceExpanded}
                                      setExpanded={setServiceExpanded} />

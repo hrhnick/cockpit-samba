@@ -8,10 +8,8 @@ import React from "react";
 import cockpit from "cockpit";
 import { useDialogs } from "dialogs";
 import { KebabDropdown } from "cockpit-components-dropdown";
-import { ListingTable } from "cockpit-components-table";
 import * as timeformat from "timeformat";
 
-import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
 import {
     Card, CardBody, CardExpandableContent, CardHeader, CardTitle,
 } from "@patternfly/react-core/dist/esm/components/Card/index.js";
@@ -22,16 +20,11 @@ import {
 import { Divider } from "@patternfly/react-core/dist/esm/components/Divider/index.js";
 import { DropdownItem } from "@patternfly/react-core/dist/esm/components/Dropdown/index.js";
 import { Label } from "@patternfly/react-core/dist/esm/components/Label/index.js";
-import { Switch } from "@patternfly/react-core/dist/esm/components/Switch/index.js";
 import { Toolbar, ToolbarContent, ToolbarItem } from "@patternfly/react-core/dist/esm/components/Toolbar/index.js";
-import { Tooltip } from "@patternfly/react-core/dist/esm/components/Tooltip/index.js";
 import { Flex } from "@patternfly/react-core/dist/esm/layouts/Flex/index.js";
-import { SyncAltIcon } from "@patternfly/react-icons";
 
 import { useAlerts } from "./alerts";
-import { ShareLabels } from "./labels";
 import { GlobalSettingsDialog, BackupRestoreDialog } from "../dialogs/config-dialogs";
-import { DisconnectClientDialog } from "../dialogs/disconnect-dialog";
 import { LogsDialog } from "../dialogs/logs-dialog";
 import { ManageAccessDialog } from "../dialogs/manage-access-dialog";
 import { errorString, type Connection } from "../samba/client";
@@ -65,9 +58,9 @@ export interface ServiceCardProps {
     conf: SambaConf;
     tag: string | null;
     applyConf: (mutate: (conf: SambaConf) => void) => Promise<void>;
+    /* Only the count is shown here; the list itself lives in the
+       Manage access dialog. */
     connections: Connection[];
-    refreshConnections: () => Promise<void>;
-    isRefreshing: boolean;
     canEdit: boolean;
     isExpanded: boolean;
     setExpanded: (expanded: boolean) => void;
@@ -75,8 +68,7 @@ export interface ServiceCardProps {
 
 export const ServiceCard = ({
     service, version, conf, tag, applyConf,
-    connections, refreshConnections, isRefreshing,
-    canEdit, isExpanded, setExpanded,
+    connections, canEdit, isExpanded, setExpanded,
 }: ServiceCardProps) => {
     const Dialogs = useDialogs();
     const alert = useAlerts();
@@ -112,6 +104,16 @@ export const ServiceCard = ({
         </DropdownItem>,
     ];
 
+    /* Everything about the unit itself — start on boot, dependencies,
+       the full journal — lives on Cockpit's own Services page, which is
+       readable without administrative access too. */
+    if (service.unit)
+        actions.push(
+            <DropdownItem key="manage-service"
+                          onClick={() => cockpit.jump("/system/services#/" + service.unit)}>
+                {_("Manage service")}
+            </DropdownItem>);
+
     if (canEdit) {
         actions.push(<Divider key="separator" />);
         if (isRunning)
@@ -135,63 +137,12 @@ export const ServiceCard = ({
     const toolbar = (
         <Toolbar>
             <ToolbarContent>
-                {isExpanded && isRunning && (
-                    <ToolbarItem>
-                        <Tooltip content={_("Refresh connections")}>
-                            <Button variant="plain"
-                                    aria-label={_("Refresh connections")}
-                                    isDisabled={isRefreshing}
-                                    className={isRefreshing ? "samba-spinning" : ""}
-                                    icon={<SyncAltIcon />}
-                                    onClick={() => refreshConnections()} />
-                        </Tooltip>
-                    </ToolbarItem>
-                )}
                 <ToolbarItem>
                     <KebabDropdown toggleButtonId="samba-service-actions" dropdownItems={actions} />
                 </ToolbarItem>
             </ToolbarContent>
         </Toolbar>
     );
-
-    const columns = [
-        { title: _("User") },
-        { title: _("Shares") },
-        { title: _("From") },
-        { title: _("Connected since") },
-        { title: _("Encryption") },
-        { title: _("Signing") },
-        { title: "", props: { screenReaderText: _("Actions") } },
-    ];
-
-    const rows = connections.map(connection => ({
-        props: { key: connection.id },
-        columns: [
-            { title: connection.username || <span className="samba-subtle">{_("Guest")}</span> },
-            {
-                title: <ShareLabels shares={connection.shares} />
-            },
-            { title: connection.machine },
-            { title: connection.connectedAt ? timeformat.dateTime(connection.connectedAt) : "" },
-            { title: connection.encryption || "-" },
-            { title: connection.signing || "-" },
-            {
-                title: canEdit && connection.machine
-                    ? (
-                        <KebabDropdown dropdownItems={[
-                            <DropdownItem key="disconnect" isDanger
-                                          onClick={() => Dialogs.show(
-                                              <DisconnectClientDialog connection={connection}
-                                                                      onDone={refreshConnections} />)}>
-                                {_("Disconnect")}
-                            </DropdownItem>,
-                        ]} />
-                    )
-                    : null,
-                props: { className: "pf-v6-c-table__action" },
-            },
-        ],
-    }));
 
     return (
         <Card className="ct-card" id="samba-service" isExpanded={isExpanded}>
@@ -208,7 +159,7 @@ export const ServiceCard = ({
                           alignItems={{ default: "alignItemsCenter" }}>
                         <Content component={ContentVariants.h2}>{_("Samba server")}</Content>
                         <Label color={status.color} id="samba-service-state">{status.text}</Label>
-                        {!isExpanded && isRunning && connections.length > 0 && (
+                        {isRunning && connections.length > 0 && (
                             <Label color="blue">
                                 {cockpit.format(cockpit.ngettext("$0 connection", "$0 connections", connections.length),
                                                 connections.length)}
@@ -234,29 +185,8 @@ export const ServiceCard = ({
                                 </DescriptionListDescription>
                             </DescriptionListGroup>
                         )}
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>{_("Start on boot")}</DescriptionListTerm>
-                            <DescriptionListDescription>
-                                <Switch id="samba-service-enabled"
-                                        aria-label={_("Start Samba on boot")}
-                                        isChecked={service.enabled === true}
-                                        isDisabled={!canEdit || service.enabled === undefined}
-                                        onChange={(_event, checked) => attempt(
-                                            _("Failed to change whether Samba starts on boot"),
-                                            () => service.setEnabled(checked))()} />
-                            </DescriptionListDescription>
-                        </DescriptionListGroup>
                     </DescriptionList>
                 </CardBody>
-
-                {isRunning && (
-                    <ListingTable id="samba-connections"
-                                  aria-label={_("Connections")}
-                                  variant="compact"
-                                  columns={columns}
-                                  rows={rows}
-                                  emptyCaption={_("No client is connected")} />
-                )}
             </CardExpandableContent>
         </Card>
     );

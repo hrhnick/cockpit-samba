@@ -398,21 +398,6 @@ export async function getConnections(): Promise<Connection[]> {
     return parseConnectionsText(processes, tcons);
 }
 
-/* Close every session a client has open. smbd has no way to drop one
- * session and leave that client's others alone, so this is by address:
- * the same machine's other connections go too.
- *
- * The address is the one thing on this page that a remote client has a
- * hand in — it arrives through smbstatus — so it is checked against the
- * shape of an actual address before being put on a root command line,
- * rather than trusting that output to be well behaved.
- */
-export async function disconnectClient(address: string): Promise<void> {
-    if (!/^[0-9a-fA-F.:]+$/.test(address) || address.startsWith("-"))
-        throw new Error(cockpit.format(_("$0 is not a network address."), address));
-    await run(["smbcontrol", "smbd", "kill-client-ip", address]);
-}
-
 /* --- Users ------------------------------------------------------------ */
 
 export interface SambaUser {

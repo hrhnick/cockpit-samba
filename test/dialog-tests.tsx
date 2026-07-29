@@ -27,13 +27,11 @@ import { ShareDialog } from "../src/dialogs/share-dialog";
 import {
     CreateDirectoryDialog, DeleteShareDialog, FixSELinuxDialog,
 } from "../src/dialogs/share-actions";
-import { DisconnectClientDialog } from "../src/dialogs/disconnect-dialog";
 import { ShareDetailsDialog } from "../src/dialogs/share-details-dialog";
 import { ManageAccessDialog } from "../src/dialogs/manage-access-dialog";
 import { BackupRestoreDialog, GlobalSettingsDialog } from "../src/dialogs/config-dialogs";
 import { LogsDialog } from "../src/dialogs/logs-dialog";
 import { emptyShare, parseConf, type Share } from "../src/samba/conf";
-import type { Connection } from "../src/samba/client";
 
 const share: Share = {
     ...emptyShare(),
@@ -50,16 +48,6 @@ const sharedShare: Share = {
     name: "team",
     validUsers: ["alice", "bob", "@staff"],
     writeList: ["carol"],
-};
-
-const connection: Connection = {
-    id: "1",
-    username: "alice",
-    machine: "192.168.1.20",
-    connectedAt: null,
-    encryption: "AES-128-GCM",
-    signing: "",
-    shares: ["documents"],
 };
 
 const conf = parseConf("[global]\n\tworkgroup = WORKGROUP\n\n[documents]\n\tpath = /srv/documents\n");
@@ -87,12 +75,14 @@ const CASES: [string, React.ReactNode, string][] = [
        than offer to close / to everyone but one user. */
     ["create directory, filesystem root", <CreateDirectoryDialog share={{ ...share, path: "/" }} onDone={nothing} />, "belongs to the operating system"],
     ["fix selinux", <FixSELinuxDialog share={share} onDone={nothing} />, "fix-selinux-dialog"],
-    ["disconnect client", <DisconnectClientDialog connection={connection} onDone={nothing} />, "192.168.1.20"],
     ["share details", <ShareDetailsDialog share={share} status={{ state: "ok", selinuxOk: true, disk: { total: 1000, available: 400 } }} inUse={2} guestLoginsAllowed guestAccount="nobody" />, "share-details-dialog"],
     /* The folder warning lives in the table now, not here: a missing
        folder must still open the details dialog, and must not carry the
        "does not exist" alert. */
     ["share details, missing folder", <ShareDetailsDialog share={share} status={{ state: "missing", selinuxOk: true, disk: null }} inUse={0} guestLoginsAllowed guestAccount="nobody" />, "share-details-dialog"],
+    /* The stubbed cockpit yields no accounts, so the table shows its
+       empty state rather than the connection columns; the mount still
+       exercises the connections poll and the guest-row derivation. */
     ["manage access", <ManageAccessDialog canEdit shares={[share, sharedShare]} />, "manage-access-dialog"],
     ["server settings", <GlobalSettingsDialog conf={conf} applyConf={noop} />, "global-settings-dialog"],
     ["backup and restore", <BackupRestoreDialog conf={conf} tag="1" />, "backup-restore-dialog"],
