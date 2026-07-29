@@ -105,17 +105,6 @@
   color: var(--pf-t--global--text--color--subtle);
 }
 
-// The refresh control spins while connections are being re-read.
-@keyframes samba-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.samba-spinning svg {
-  animation: samba-spin 1s linear infinite;
-}
-
 // The live log stream. CodeBlock supplies the monospace styling; this
 // only bounds its height and lets it scroll, so that the modal stays a
 // fixed size no matter how much output arrives.

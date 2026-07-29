@@ -45,19 +45,23 @@ export function useSambaConf(): ConfState {
     return state;
 }
 
+/* How often to re-run smbstatus where connections are shown. They come
+   and go without any notification we could subscribe to, so polling is
+   the only way to keep the answer current. */
+export const CONNECTION_POLL_SECONDS = 15;
+
 /* pkg/lib/service.js is untyped JavaScript; this is its contract as far
    as this page uses it. See the comment block at the top of that file. */
 interface ServiceProxy extends cockpit.EventSource<{ changed(): void }> {
     exists: boolean | null;
     state?: "starting" | "running" | "stopping" | "stopped" | "failed";
-    enabled?: boolean;
-    /* The raw org.freedesktop.systemd1.Unit proxy. */
-    unit?: { ActiveEnterTimestamp?: number };
+    /* The raw org.freedesktop.systemd1.Unit proxy. Id is the canonical
+       unit name, which differs from the name asked for when that name
+       is an alias. */
+    unit?: { Id?: string, ActiveEnterTimestamp?: number };
     start(): Promise<void>;
     stop(): Promise<void>;
     restart(): Promise<void>;
-    enable(): Promise<void>;
-    disable(): Promise<void>;
 }
 
 export interface ServiceState {
@@ -65,7 +69,6 @@ export interface ServiceState {
     unit: string | null;
     /* undefined while unknown; see service.proxy in pkg/lib. */
     state: "starting" | "running" | "stopping" | "stopped" | "failed" | undefined;
-    enabled: boolean | undefined;
     /* When the unit entered the active state, or null if it is not
        running or systemd has not told us yet. */
     activeSince: Date | null;
@@ -74,7 +77,6 @@ export interface ServiceState {
     start: () => Promise<void>;
     stop: () => Promise<void>;
     restart: () => Promise<void>;
-    setEnabled: (enabled: boolean) => Promise<void>;
 }
 
 /* Whichever of several candidate unit names this machine actually has.
@@ -101,7 +103,14 @@ function useUnitProxy(units: string[]): {
         return () => proxies.forEach(p => p.removeEventListener("changed", changed));
     }, [proxies]);
 
-    const proxy = proxies.find(p => p.exists);
+    /* Prefer the proxy whose canonical name is the one it was asked
+       for. Debian's smbd.service carries `Alias=smb.service`, so once
+       the service is enabled a unit named smb.service exists too — and
+       systemd resolves the alias for state and jobs, so everything
+       *looks* right, but anything that needs the real unit name (the
+       Services page, enable/disable) breaks against the alias. */
+    const canonical = proxies.find((p, i) => p.exists && p.unit?.Id === units[i]);
+    const proxy = canonical ?? proxies.find(p => p.exists);
     /* exists starts out null and becomes a boolean once known. */
     const known = proxies.every(p => p.exists !== null);
 
@@ -132,16 +141,11 @@ export function useSambaService(): ServiceState {
     return {
         unit,
         state: active?.state,
-        enabled: active?.enabled,
         activeSince,
         installed,
         start: () => call("start"),
         stop: () => call("stop"),
         restart: () => call("restart"),
-        setEnabled: async (enabled: boolean) => {
-            if (active)
-                await (enabled ? active.enable() : active.disable());
-        },
     };
 }
 
