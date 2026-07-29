@@ -34,9 +34,13 @@ updates:
       - dependency-name: "sass"
         versions: [">=1.80.0", "2.x"]
 
-      # needs to be done in Cockpit first
+      # PatternFly versions follow the vendored pkg/lib, which is built
+      # against the exact release Cockpit uses at the pinned commit; the
+      # cockpit-lib-update workflow moves both together and
+      # test/check-patternfly.js fails the build on any mismatch. A
+      # dependabot bump can only ever trip that guard, so no update -
+      # minor or major - is wanted here.
       - dependency-name: "@patternfly/*"
-        update-types: ["version-update:semver-major"]
 
       # React majors have to move together with the vendored pkg/lib,
       # which is built against the React that Cockpit uses
@@ -44,8 +48,10 @@ updates:
         update-types: ["version-update:semver-major"]
 
       # eslint 9 requires flat config, which pkg/lib's shared
-      # configuration has not moved to
-      - dependency-name: "eslint"
+      # configuration has not moved to - and the whole plugin family
+      # moves its majors to eslint 9 with it. eslint-plugin-promise 7
+      # already broke eslint-config-standard 17's peer range once.
+      - dependency-name: "eslint*"
         update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
